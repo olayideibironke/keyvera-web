@@ -1,4 +1,3 @@
-// app/landlord/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -16,15 +15,15 @@ type Property = {
 };
 
 type AgentRow = {
-  id: string; // agents.id (uuid)
-  user_id: string; // auth user id (uuid)
+  id: string;
+  user_id: string;
   kyc_status: string | null;
   created_at?: string;
 };
 
 type AgentMini = {
-  agent_id: string; // agents.id
-  user_id: string; // agents.user_id
+  agent_id: string;
+  user_id: string;
   kyc_status: string | null;
   full_name: string | null;
 };
@@ -60,7 +59,6 @@ type InspectionRow = {
   completed_at?: string | null;
   completed_by_user_id?: string | null;
 
-  // Enriched client-side
   tenant_full_name?: string | null;
   scheduled_by_full_name?: string | null;
   completed_by_full_name?: string | null;
@@ -151,7 +149,7 @@ function Card({
   return (
     <section className="rounded-[28px] border border-black/10 bg-white/70 p-6 shadow-[0_16px_46px_rgba(11,31,42,0.10)] backdrop-blur-xl">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">{title}</div>
           {subtitle ? <p className="mt-1 text-sm text-black/60">{subtitle}</p> : null}
         </div>
@@ -273,7 +271,24 @@ function StatCard({
   );
 }
 
-// ---- error tagging (no console spam)
+function MiniInfoCard({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="rounded-[22px] border border-black/10 bg-white/75 p-4 shadow-[0_12px_30px_rgba(11,31,42,0.05)]">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">{label}</div>
+      <div className="mt-2 text-lg font-semibold text-[#0b1f2a]">{value}</div>
+      <div className="mt-1 text-xs text-black/50">{detail}</div>
+    </div>
+  );
+}
+
 function tagErr(context: string, e: any) {
   const msg = e?.message ? String(e.message) : String(e ?? "Unknown error");
   return new Error(`[${context}] ${msg}`);
@@ -306,7 +321,6 @@ export default function LandlordPropertiesPage() {
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState<string | null>(null);
 
-  // Inspections (read-only)
   const [inspectionsLoading, setInspectionsLoading] = useState(true);
   const [inspections, setInspections] = useState<InspectionRow[]>([]);
   const [inspectionsErr, setInspectionsErr] = useState<string | null>(null);
@@ -792,52 +806,113 @@ export default function LandlordPropertiesPage() {
         </Card>
       ) : (
         <>
-          <Card title={<h2 className="text-lg font-semibold text-[#0b1f2a]">Listings</h2>} subtitle="Your properties and their current status.">
-            <DataTableShell>
-              <table className="w-full text-left text-sm">
-                <TableHead>
-                  <tr>
-                    <th className="p-4 text-xs font-semibold text-black/60">Title</th>
-                    <th className="p-4 text-xs font-semibold text-black/60">Location</th>
-                    <th className="p-4 text-xs font-semibold text-black/60">Rent</th>
-                    <th className="p-4 text-xs font-semibold text-black/60">Status</th>
-                    <th className="p-4"></th>
-                  </tr>
-                </TableHead>
-                <tbody>
-                  {properties.map((p) => (
-                    <tr key={p.id} className="border-t border-black/5">
-                      <td className="p-4">
-                        <div className="font-semibold text-[#0b1f2a]">{p.title}</div>
-                        <div className="mt-1 font-mono text-xs text-black/50">{shortId(p.id)}</div>
-                      </td>
-                      <td className="p-4 text-black/70">{[p.area, p.city].filter(Boolean).join(", ") || "—"}</td>
-                      <td className="p-4 text-black/70">{p.rent_amount_ngn != null ? `₦${p.rent_amount_ngn.toLocaleString()}` : "—"}</td>
-                      <td className="p-4">
-                        <InlinePill tone={statusTone(p.status)}>{p.status}</InlinePill>
-                      </td>
-                      <td className="p-4 text-right">
-                        {p.status === "draft" ? (
-                          <button
-                            onClick={() => router.push(`/landlord/properties/${p.id}/edit`)}
-                            className="rounded-2xl border border-black/10 bg-white/70 px-4 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
-                          >
-                            Continue Editing
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => router.push(`/landlord/properties/${p.id}`)}
-                            className="rounded-2xl border border-black/10 bg-white/70 px-4 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
-                          >
-                            View
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </DataTableShell>
+          <Card
+            title={<h2 className="text-lg font-semibold text-[#0b1f2a]">Listings</h2>}
+            subtitle="Your properties and their current status."
+            right={<div className="text-xs text-black/50">Premium listing view</div>}
+          >
+            <div className="hidden xl:block">
+              <DataTableShell>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1160px] text-left text-sm">
+                    <TableHead>
+                      <tr>
+                        <th className="px-5 py-4 text-xs font-semibold text-black/60">Title</th>
+                        <th className="px-5 py-4 text-xs font-semibold text-black/60">Location</th>
+                        <th className="px-5 py-4 text-xs font-semibold text-black/60">Rent</th>
+                        <th className="px-5 py-4 text-xs font-semibold text-black/60">Status</th>
+                        <th className="px-5 py-4 text-xs font-semibold text-black/60">Created</th>
+                        <th className="w-[180px] px-5 py-4"></th>
+                      </tr>
+                    </TableHead>
+                    <tbody>
+                      {properties.map((p) => (
+                        <tr key={p.id} className="border-t border-black/5">
+                          <td className="px-5 py-5">
+                            <div className="font-semibold text-[#0b1f2a]">{p.title}</div>
+                            <div className="mt-1 font-mono text-xs text-black/50">{shortId(p.id)}</div>
+                          </td>
+                          <td className="px-5 py-5 text-black/70">{[p.area, p.city].filter(Boolean).join(", ") || "—"}</td>
+                          <td className="px-5 py-5 text-black/70">{p.rent_amount_ngn != null ? `₦${p.rent_amount_ngn.toLocaleString()}` : "—"}</td>
+                          <td className="px-5 py-5">
+                            <InlinePill tone={statusTone(p.status)}>{p.status}</InlinePill>
+                          </td>
+                          <td className="px-5 py-5 text-black/60">{formatDt(p.created_at)}</td>
+                          <td className="px-5 py-5 text-right">
+                            {p.status === "draft" ? (
+                              <button
+                                onClick={() => router.push(`/landlord/properties/${p.id}/edit`)}
+                                className="rounded-2xl border border-black/10 bg-white/70 px-4 py-2.5 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                              >
+                                Continue Editing
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => router.push(`/landlord/properties/${p.id}`)}
+                                className="rounded-2xl border border-black/10 bg-white/70 px-4 py-2.5 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                              >
+                                View
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </DataTableShell>
+            </div>
+
+            <div className="grid gap-4 xl:hidden">
+              {properties.map((p) => (
+                <article
+                  key={p.id}
+                  className="rounded-[24px] border border-black/10 bg-white/80 p-4 shadow-[0_14px_34px_rgba(11,31,42,0.06)]"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-[#0b1f2a]">{p.title}</div>
+                      <div className="mt-1 font-mono text-xs text-black/50">{shortId(p.id)}</div>
+                    </div>
+
+                    <InlinePill tone={statusTone(p.status)}>{p.status}</InlinePill>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Location</div>
+                      <div className="mt-1 text-sm text-black/60">{[p.area, p.city].filter(Boolean).join(", ") || "—"}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Rent</div>
+                      <div className="mt-1 text-sm text-black/60">{p.rent_amount_ngn != null ? `₦${p.rent_amount_ngn.toLocaleString()}` : "—"}</div>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Created</div>
+                      <div className="mt-1 text-sm text-black/60">{formatDt(p.created_at)}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-5">
+                    {p.status === "draft" ? (
+                      <button
+                        onClick={() => router.push(`/landlord/properties/${p.id}/edit`)}
+                        className="w-full rounded-2xl border border-black/10 bg-white/70 px-4 py-3 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                      >
+                        Continue Editing
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => router.push(`/landlord/properties/${p.id}`)}
+                        className="w-full rounded-2xl border border-black/10 bg-white/70 px-4 py-3 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                      >
+                        View
+                      </button>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
           </Card>
 
           <div className="mt-6">
@@ -946,66 +1021,68 @@ export default function LandlordPropertiesPage() {
                 ) : (
                   <div className="mt-3">
                     <DataTableShell>
-                      <table className="w-full text-left text-sm">
-                        <TableHead>
-                          <tr>
-                            <th className="p-3 text-xs font-semibold text-black/60">Agent</th>
-                            <th className="p-3 text-xs font-semibold text-black/60">KYC</th>
-                            <th className="p-3 text-xs font-semibold text-black/60">Status</th>
-                            <th className="p-3 text-xs font-semibold text-black/60">Approved at</th>
-                            <th className="p-3 text-right"></th>
-                          </tr>
-                        </TableHead>
-                        <tbody>
-                          {existingForSelected.map((a) => {
-                            const agent = agentsById[a.agent_id];
-                            const name = agent?.full_name ?? `Agent ${a.agent_id.slice(0, 8)}`;
-                            const kyc = agent?.kyc_status ?? "unknown";
-                            const approved = a.approved_at ? new Date(a.approved_at).toLocaleString() : "—";
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[980px] text-left text-sm">
+                          <TableHead>
+                            <tr>
+                              <th className="p-3 text-xs font-semibold text-black/60">Agent</th>
+                              <th className="p-3 text-xs font-semibold text-black/60">KYC</th>
+                              <th className="p-3 text-xs font-semibold text-black/60">Status</th>
+                              <th className="p-3 text-xs font-semibold text-black/60">Approved at</th>
+                              <th className="w-[170px] p-3 text-right"></th>
+                            </tr>
+                          </TableHead>
+                          <tbody>
+                            {existingForSelected.map((a) => {
+                              const agent = agentsById[a.agent_id];
+                              const name = agent?.full_name ?? `Agent ${a.agent_id.slice(0, 8)}`;
+                              const kyc = agent?.kyc_status ?? "unknown";
+                              const approved = a.approved_at ? new Date(a.approved_at).toLocaleString() : "—";
 
-                            return (
-                              <tr key={a.id} className="border-t border-black/5">
-                                <td className="p-3">
-                                  <div className="font-semibold text-[#0b1f2a]">{name}</div>
-                                  <div className="font-mono text-xs text-black/50">{shortId(a.agent_id)}</div>
-                                </td>
-                                <td className="p-3">
-                                  <InlinePill tone={kycTone(kyc)}>{kyc}</InlinePill>
-                                </td>
-                                <td className="p-3">
-                                  <InlinePill tone={authTone(a.status)}>{a.status}</InlinePill>
-                                </td>
-                                <td className="p-3 text-black/70">{approved}</td>
-                                <td className="p-3 text-right">
-                                  <div className="flex flex-wrap justify-end gap-2">
-                                    {a.status === "pending" ? (
-                                      <button
-                                        onClick={() => approvePending(a.id)}
-                                        disabled={actionBusy}
-                                        className="rounded-2xl bg-[#0b1f2a] px-3 py-2 text-xs font-semibold text-white shadow-[0_12px_28px_rgba(11,31,42,0.22)] transition hover:shadow-[0_16px_34px_rgba(11,31,42,0.26)] disabled:opacity-60"
-                                      >
-                                        {actionBusy ? "Working…" : "Approve"}
-                                      </button>
-                                    ) : null}
+                              return (
+                                <tr key={a.id} className="border-t border-black/5">
+                                  <td className="p-3">
+                                    <div className="font-semibold text-[#0b1f2a]">{name}</div>
+                                    <div className="font-mono text-xs text-black/50">{shortId(a.agent_id)}</div>
+                                  </td>
+                                  <td className="p-3">
+                                    <InlinePill tone={kycTone(kyc)}>{kyc}</InlinePill>
+                                  </td>
+                                  <td className="p-3">
+                                    <InlinePill tone={authTone(a.status)}>{a.status}</InlinePill>
+                                  </td>
+                                  <td className="p-3 text-black/70">{approved}</td>
+                                  <td className="p-3 text-right">
+                                    <div className="flex flex-wrap justify-end gap-2">
+                                      {a.status === "pending" ? (
+                                        <button
+                                          onClick={() => approvePending(a.id)}
+                                          disabled={actionBusy}
+                                          className="rounded-2xl bg-[#0b1f2a] px-3 py-2 text-xs font-semibold text-white shadow-[0_12px_28px_rgba(11,31,42,0.22)] transition hover:shadow-[0_16px_34px_rgba(11,31,42,0.26)] disabled:opacity-60"
+                                        >
+                                          {actionBusy ? "Working…" : "Approve"}
+                                        </button>
+                                      ) : null}
 
-                                    {a.status === "revoked" ? (
-                                      <span className="text-xs text-black/50">Revoked</span>
-                                    ) : (
-                                      <button
-                                        onClick={() => revokeAuthorization(a.id)}
-                                        disabled={actionBusy}
-                                        className="rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)] disabled:opacity-60"
-                                      >
-                                        {actionBusy ? "Working…" : "Revoke"}
-                                      </button>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                                      {a.status === "revoked" ? (
+                                        <span className="text-xs text-black/50">Revoked</span>
+                                      ) : (
+                                        <button
+                                          onClick={() => revokeAuthorization(a.id)}
+                                          disabled={actionBusy}
+                                          className="rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)] disabled:opacity-60"
+                                        >
+                                          {actionBusy ? "Working…" : "Revoke"}
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     </DataTableShell>
                   </div>
                 )}
@@ -1059,59 +1136,61 @@ export default function LandlordPropertiesPage() {
               ) : (
                 <div className="mt-5">
                   <DataTableShell>
-                    <table className="w-full text-left text-sm">
-                      <TableHead>
-                        <tr>
-                          <th className="p-3 text-xs font-semibold text-black/60">Tenant</th>
-                          <th className="p-3 text-xs font-semibold text-black/60">Status</th>
-                          <th className="p-3 text-xs font-semibold text-black/60">Fee</th>
-                          <th className="p-3 text-xs font-semibold text-black/60">Payment</th>
-                          <th className="p-3 text-xs font-semibold text-black/60">Created</th>
-                          <th className="p-3 text-xs font-semibold text-black/60">Paid</th>
-                          <th className="p-3 text-xs font-semibold text-black/60">Scheduled</th>
-                          <th className="p-3 text-xs font-semibold text-black/60">Scheduled by</th>
-                          <th className="p-3 text-xs font-semibold text-black/60">Completed</th>
-                          <th className="p-3 text-xs font-semibold text-black/60">Completed by</th>
-                        </tr>
-                      </TableHead>
-                      <tbody>
-                        {inspectionsForSelected.map((r) => (
-                          <tr key={r.id} className="border-t border-black/5">
-                            <td className="p-3">
-                              <div className="font-semibold text-[#0b1f2a]">{r.tenant_full_name ?? "Tenant"}</div>
-                              <div className="font-mono text-xs text-black/50">{shortId(r.tenant_user_id)}</div>
-                            </td>
-                            <td className="p-3">
-                              <InlinePill tone={inspectionTone(r.status)}>{r.status}</InlinePill>
-                            </td>
-                            <td className="p-3 text-black/70">{formatNgn(r.inspection_fee_ngn)}</td>
-                            <td className="p-3 font-mono text-xs text-black/60">{maskRef(r.payment_reference)}</td>
-                            <td className="p-3 text-black/70">{formatDt(r.created_at)}</td>
-                            <td className="p-3 text-black/70">{formatDt(r.paid_at)}</td>
-                            <td className="p-3 text-black/70">{formatDt(r.scheduled_at)}</td>
-                            <td className="p-3">
-                              {r.scheduled_by_full_name ? (
-                                <div className="font-semibold text-[#0b1f2a]">{r.scheduled_by_full_name}</div>
-                              ) : r.scheduled_by_user_id ? (
-                                <div className="font-mono text-xs text-black/50">{shortId(r.scheduled_by_user_id)}</div>
-                              ) : (
-                                <span className="text-black/50">—</span>
-                              )}
-                            </td>
-                            <td className="p-3 text-black/70">{formatDt(r.completed_at)}</td>
-                            <td className="p-3">
-                              {r.completed_by_full_name ? (
-                                <div className="font-semibold text-[#0b1f2a]">{r.completed_by_full_name}</div>
-                              ) : r.completed_by_user_id ? (
-                                <div className="font-mono text-xs text-black/50">{shortId(r.completed_by_user_id)}</div>
-                              ) : (
-                                <span className="text-black/50">—</span>
-                              )}
-                            </td>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[1440px] text-left text-sm">
+                        <TableHead>
+                          <tr>
+                            <th className="p-3 text-xs font-semibold text-black/60">Tenant</th>
+                            <th className="p-3 text-xs font-semibold text-black/60">Status</th>
+                            <th className="p-3 text-xs font-semibold text-black/60">Fee</th>
+                            <th className="p-3 text-xs font-semibold text-black/60">Payment</th>
+                            <th className="p-3 text-xs font-semibold text-black/60">Created</th>
+                            <th className="p-3 text-xs font-semibold text-black/60">Paid</th>
+                            <th className="p-3 text-xs font-semibold text-black/60">Scheduled</th>
+                            <th className="p-3 text-xs font-semibold text-black/60">Scheduled by</th>
+                            <th className="p-3 text-xs font-semibold text-black/60">Completed</th>
+                            <th className="p-3 text-xs font-semibold text-black/60">Completed by</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </TableHead>
+                        <tbody>
+                          {inspectionsForSelected.map((r) => (
+                            <tr key={r.id} className="border-t border-black/5">
+                              <td className="p-3">
+                                <div className="font-semibold text-[#0b1f2a]">{r.tenant_full_name ?? "Tenant"}</div>
+                                <div className="font-mono text-xs text-black/50">{shortId(r.tenant_user_id)}</div>
+                              </td>
+                              <td className="p-3">
+                                <InlinePill tone={inspectionTone(r.status)}>{r.status}</InlinePill>
+                              </td>
+                              <td className="p-3 text-black/70">{formatNgn(r.inspection_fee_ngn)}</td>
+                              <td className="p-3 font-mono text-xs text-black/60">{maskRef(r.payment_reference)}</td>
+                              <td className="p-3 text-black/70">{formatDt(r.created_at)}</td>
+                              <td className="p-3 text-black/70">{formatDt(r.paid_at)}</td>
+                              <td className="p-3 text-black/70">{formatDt(r.scheduled_at)}</td>
+                              <td className="p-3">
+                                {r.scheduled_by_full_name ? (
+                                  <div className="font-semibold text-[#0b1f2a]">{r.scheduled_by_full_name}</div>
+                                ) : r.scheduled_by_user_id ? (
+                                  <div className="font-mono text-xs text-black/50">{shortId(r.scheduled_by_user_id)}</div>
+                                ) : (
+                                  <span className="text-black/50">—</span>
+                                )}
+                              </td>
+                              <td className="p-3 text-black/70">{formatDt(r.completed_at)}</td>
+                              <td className="p-3">
+                                {r.completed_by_full_name ? (
+                                  <div className="font-semibold text-[#0b1f2a]">{r.completed_by_full_name}</div>
+                                ) : r.completed_by_user_id ? (
+                                  <div className="font-mono text-xs text-black/50">{shortId(r.completed_by_user_id)}</div>
+                                ) : (
+                                  <span className="text-black/50">—</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </DataTableShell>
                 </div>
               )}

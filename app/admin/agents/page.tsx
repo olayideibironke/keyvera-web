@@ -1,4 +1,3 @@
-// app/admin/agents/page.tsx
 "use client";
 
 import Link from "next/link";
@@ -29,7 +28,6 @@ type EnforcementMode = null | {
 };
 
 function BadgeIcon({ size = 44 }: { size?: number }) {
-  // Premium + neutral + consistent (no ribbons, no blobs)
   return (
     <div
       className="rounded-2xl border border-black/10 bg-white shadow-sm"
@@ -53,7 +51,7 @@ function fmtDate(x: string) {
 
 function statusPill(status: string | null | undefined) {
   const s = String(status || "").toLowerCase();
-  const base = "inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-semibold";
+  const base = "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold";
   if (s === "disabled") return `${base} border-red-200 bg-red-50 text-red-700`;
   if (s === "active") return `${base} border-[rgba(14,165,163,0.25)] bg-[rgba(14,165,163,0.10)] text-[#0a4f63]`;
   return `${base} border-black/10 bg-white/70 text-black/60`;
@@ -93,6 +91,50 @@ async function logAudit(payload: {
   });
 
   if (error) throw error;
+}
+
+function SectionShell({
+  title,
+  subtitle,
+  right,
+  children,
+}: {
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-[28px] border border-black/10 bg-white/70 shadow-[0_16px_46px_rgba(11,31,42,0.10)] backdrop-blur-xl">
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-black/10 p-5 md:p-6">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">{title}</div>
+          {subtitle ? <p className="mt-1 text-sm leading-relaxed text-black/60">{subtitle}</p> : null}
+        </div>
+        {right ? <div className="flex flex-wrap items-center gap-2">{right}</div> : null}
+      </div>
+      <div>{children}</div>
+    </section>
+  );
+}
+
+function SectionBadge({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-black/10 bg-white/75 px-3 py-1 text-[11px] font-semibold text-black/55">
+      {children}
+    </span>
+  );
+}
+
+function EmptyState({ title, body }: { title: string; body?: string }) {
+  return (
+    <div className="p-8">
+      <div className="rounded-2xl border border-black/10 bg-white/70 p-5 text-sm text-black/60">
+        <div className="font-semibold text-[#0b1f2a]">{title}</div>
+        {body ? <div className="mt-1 text-black/60">{body}</div> : null}
+      </div>
+    </div>
+  );
 }
 
 export default function AdminAgentsPage() {
@@ -306,7 +348,6 @@ export default function AdminAgentsPage() {
 
   return (
     <main className="min-h-[calc(100vh-120px)]">
-      {/* Header */}
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-3">
@@ -324,7 +365,7 @@ export default function AdminAgentsPage() {
             >
               ← Admin Home
             </Link>
-            <span className={`rounded-full border border-black/10 bg-white/70 px-2 py-1 text-[11px] font-medium ${summary.tone}`}>
+            <span className={`rounded-full border border-black/10 bg-white/70 px-2.5 py-1 text-[11px] font-medium ${summary.tone}`}>
               {summary.label}
             </span>
           </div>
@@ -360,133 +401,231 @@ export default function AdminAgentsPage() {
         <div className="mb-6 rounded-[28px] border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">{auditErr}</div>
       ) : null}
 
-      {/* Main card */}
-      <section className="rounded-[28px] border border-black/10 bg-white/70 shadow-[0_16px_46px_rgba(11,31,42,0.10)] backdrop-blur-xl">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/10 p-5">
-          <div className="flex items-center gap-2">
+      <SectionShell
+        title={
+          <>
             <div className="text-sm font-semibold text-[#0b1f2a]">Pending Agents</div>
-            <span className="rounded-full border border-black/10 bg-white/70 px-2 py-1 text-[11px] font-medium text-black/60">{pendingCount}</span>
-          </div>
-
-          <div className="text-xs text-black/50">Queue ordered by oldest first.</div>
-        </div>
-
+            <SectionBadge>{pendingCount}</SectionBadge>
+          </>
+        }
+        subtitle="Queue ordered by oldest first. Review KYC decisions cleanly and keep enforcement actions deliberate."
+        right={<div className="text-xs text-black/50">Premium review queue</div>}
+      >
         {loading ? (
           <div className="p-6 text-sm text-black/60">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="p-8">
-            <div className="rounded-2xl border border-black/10 bg-white/70 p-5 text-sm text-black/60">
-              <div className="font-semibold text-[#0b1f2a]">No pending agents.</div>
-              <div className="mt-1 text-black/60">When agents submit KYC, they’ll appear here for approval.</div>
-            </div>
-          </div>
+          <EmptyState
+            title="No pending agents."
+            body="When agents submit KYC, they’ll appear here for approval."
+          />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-gradient-to-b from-black/5 to-black/0">
-                <tr>
-                  <th className="whitespace-nowrap p-4 text-xs font-semibold text-black/60">Agent ID</th>
-                  <th className="whitespace-nowrap p-4 text-xs font-semibold text-black/60">User</th>
-                  <th className="whitespace-nowrap p-4 text-xs font-semibold text-black/60">Account</th>
-                  <th className="whitespace-nowrap p-4 text-xs font-semibold text-black/60">License</th>
-                  <th className="whitespace-nowrap p-4 text-xs font-semibold text-black/60">Submitted</th>
-                  <th className="whitespace-nowrap p-4 text-xs font-semibold text-black/60 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => {
-                  const busy = busyId === r.id;
-                  const p = profiles[r.user_id];
-                  const account = (p?.account_status || "active").toLowerCase();
-                  const isDisabled = account === "disabled";
+          <>
+            <div className="hidden xl:block">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1120px] text-left text-sm">
+                  <thead className="bg-gradient-to-b from-black/5 to-black/0">
+                    <tr>
+                      <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Agent</th>
+                      <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Agent ID</th>
+                      <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Account</th>
+                      <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">License</th>
+                      <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Submitted</th>
+                      <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r) => {
+                      const busy = busyId === r.id;
+                      const p = profiles[r.user_id];
+                      const account = (p?.account_status || "active").toLowerCase();
+                      const isDisabled = account === "disabled";
 
-                  return (
-                    <tr key={r.id} className="border-t border-black/5">
-                      <td className="p-4">
-                        <div className="font-mono text-xs text-[#0b1f2a]" title={r.id}>
+                      return (
+                        <tr key={r.id} className="border-t border-black/5 align-top">
+                          <td className="px-5 py-5">
+                            <div className="min-w-0">
+                              <div className="font-semibold text-[#0b1f2a]">{p?.full_name?.trim() || "Agent"}</div>
+                              <div className="mt-1 font-mono text-xs text-black/50" title={r.user_id}>
+                                {shortId(r.user_id)}
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="px-5 py-5">
+                            <div className="font-mono text-xs text-[#0b1f2a]" title={r.id}>
+                              {shortId(r.id)}
+                            </div>
+                          </td>
+
+                          <td className="px-5 py-5">
+                            <span className={statusPill(account)}>{account}</span>
+                          </td>
+
+                          <td className="px-5 py-5 text-[#0b1f2a]">{r.license_number ?? "—"}</td>
+                          <td className="px-5 py-5 text-black/60">{fmtDate(r.created_at)}</td>
+
+                          <td className="px-5 py-5">
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <button
+                                onClick={() => updateKycStatus(r, "verified")}
+                                disabled={busy}
+                                className={`rounded-2xl px-4 py-2.5 text-xs font-semibold transition ${
+                                  busy
+                                    ? "cursor-not-allowed border border-black/10 bg-white/70 text-black/40"
+                                    : "bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] text-white shadow-[0_14px_34px_rgba(10,79,99,0.22)] hover:shadow-[0_18px_44px_rgba(10,79,99,0.30)]"
+                                }`}
+                              >
+                                {busy ? "Working…" : "Approve KYC"}
+                              </button>
+
+                              <button
+                                onClick={() => updateKycStatus(r, "rejected")}
+                                disabled={busy}
+                                className={`rounded-2xl border px-4 py-2.5 text-xs font-semibold transition ${
+                                  busy
+                                    ? "cursor-not-allowed border-black/10 bg-white/70 text-black/40"
+                                    : "border-black/10 bg-white/70 text-[#0b1f2a] hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                                }`}
+                              >
+                                Reject
+                              </button>
+
+                              {isDisabled ? (
+                                <button
+                                  onClick={() => openEnforcement("enable_agent", r)}
+                                  disabled={busy}
+                                  className={`rounded-2xl px-4 py-2.5 text-xs font-semibold transition ${
+                                    busy
+                                      ? "cursor-not-allowed border border-black/10 bg-white/70 text-black/40"
+                                      : "bg-gradient-to-r from-[#0b1f2a] to-[#0a4f63] text-white shadow-[0_14px_34px_rgba(11,31,42,0.20)] hover:shadow-[0_18px_44px_rgba(11,31,42,0.28)]"
+                                  }`}
+                                >
+                                  Enable Agent
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => openEnforcement("disable_agent", r)}
+                                  disabled={busy}
+                                  className={`rounded-2xl border px-4 py-2.5 text-xs font-semibold transition ${
+                                    busy
+                                      ? "cursor-not-allowed border-black/10 bg-white/70 text-black/40"
+                                      : "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                                  }`}
+                                >
+                                  Disable Agent
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="grid gap-4 p-4 md:p-5 xl:hidden">
+              {rows.map((r) => {
+                const busy = busyId === r.id;
+                const p = profiles[r.user_id];
+                const account = (p?.account_status || "active").toLowerCase();
+                const isDisabled = account === "disabled";
+
+                return (
+                  <article
+                    key={r.id}
+                    className="rounded-[24px] border border-black/10 bg-white/80 p-4 shadow-[0_14px_34px_rgba(11,31,42,0.06)]"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-semibold text-[#0b1f2a]">{p?.full_name?.trim() || "Agent"}</div>
+                        <div className="mt-1 font-mono text-xs text-black/50" title={r.user_id}>
+                          {shortId(r.user_id)}
+                        </div>
+                      </div>
+
+                      <span className={statusPill(account)}>{account}</span>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Agent ID</div>
+                        <div className="mt-1 font-mono text-xs text-[#0b1f2a]" title={r.id}>
                           {shortId(r.id)}
                         </div>
-                      </td>
+                      </div>
 
-                      <td className="p-4">
-                        <div className="text-[#0b1f2a]">
-                          <div className="font-semibold">{p?.full_name?.trim() || "Agent"}</div>
-                          <div className="font-mono text-xs text-black/50" title={r.user_id}>
-                            {shortId(r.user_id)}
-                          </div>
-                        </div>
-                      </td>
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">License</div>
+                        <div className="mt-1 text-sm text-[#0b1f2a]">{r.license_number ?? "—"}</div>
+                      </div>
 
-                      <td className="p-4">
-                        <span className={statusPill(account)}>{account}</span>
-                      </td>
+                      <div className="sm:col-span-2">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Submitted</div>
+                        <div className="mt-1 text-sm text-black/60">{fmtDate(r.created_at)}</div>
+                      </div>
+                    </div>
 
-                      <td className="p-4 text-[#0b1f2a]">{r.license_number ?? "—"}</td>
-                      <td className="p-4 text-black/60">{fmtDate(r.created_at)}</td>
+                    <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                      <button
+                        onClick={() => updateKycStatus(r, "verified")}
+                        disabled={busy}
+                        className={`rounded-2xl px-4 py-3 text-xs font-semibold transition ${
+                          busy
+                            ? "cursor-not-allowed border border-black/10 bg-white/70 text-black/40"
+                            : "bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] text-white shadow-[0_14px_34px_rgba(10,79,99,0.22)] hover:shadow-[0_18px_44px_rgba(10,79,99,0.30)]"
+                        }`}
+                      >
+                        {busy ? "Working…" : "Approve KYC"}
+                      </button>
 
-                      <td className="p-4">
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <button
-                            onClick={() => updateKycStatus(r, "verified")}
-                            disabled={busy}
-                            className={`rounded-2xl px-4 py-2 text-xs font-semibold transition ${
-                              busy
-                                ? "cursor-not-allowed border border-black/10 bg-white/70 text-black/40"
-                                : "bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] text-white shadow-[0_14px_34px_rgba(10,79,99,0.22)] hover:shadow-[0_18px_44px_rgba(10,79,99,0.30)]"
-                            }`}
-                          >
-                            {busy ? "Working…" : "Approve KYC"}
-                          </button>
+                      <button
+                        onClick={() => updateKycStatus(r, "rejected")}
+                        disabled={busy}
+                        className={`rounded-2xl border px-4 py-3 text-xs font-semibold transition ${
+                          busy
+                            ? "cursor-not-allowed border-black/10 bg-white/70 text-black/40"
+                            : "border-black/10 bg-white/70 text-[#0b1f2a] hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                        }`}
+                      >
+                        Reject
+                      </button>
 
-                          <button
-                            onClick={() => updateKycStatus(r, "rejected")}
-                            disabled={busy}
-                            className={`rounded-2xl border px-4 py-2 text-xs font-semibold transition ${
-                              busy
-                                ? "cursor-not-allowed border-black/10 bg-white/70 text-black/40"
-                                : "border-black/10 bg-white/70 text-[#0b1f2a] hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
-                            }`}
-                          >
-                            Reject
-                          </button>
-
-                          {isDisabled ? (
-                            <button
-                              onClick={() => openEnforcement("enable_agent", r)}
-                              disabled={busy}
-                              className={`rounded-2xl px-4 py-2 text-xs font-semibold transition ${
-                                busy
-                                  ? "cursor-not-allowed border border-black/10 bg-white/70 text-black/40"
-                                  : "bg-gradient-to-r from-[#0b1f2a] to-[#0a4f63] text-white shadow-[0_14px_34px_rgba(11,31,42,0.20)] hover:shadow-[0_18px_44px_rgba(11,31,42,0.28)]"
-                              }`}
-                            >
-                              Enable Agent
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => openEnforcement("disable_agent", r)}
-                              disabled={busy}
-                              className={`rounded-2xl border px-4 py-2 text-xs font-semibold transition ${
-                                busy
-                                  ? "cursor-not-allowed border-black/10 bg-white/70 text-black/40"
-                                  : "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
-                              }`}
-                            >
-                              Disable Agent
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      {isDisabled ? (
+                        <button
+                          onClick={() => openEnforcement("enable_agent", r)}
+                          disabled={busy}
+                          className={`rounded-2xl px-4 py-3 text-xs font-semibold transition ${
+                            busy
+                              ? "cursor-not-allowed border border-black/10 bg-white/70 text-black/40"
+                              : "bg-gradient-to-r from-[#0b1f2a] to-[#0a4f63] text-white shadow-[0_14px_34px_rgba(11,31,42,0.20)] hover:shadow-[0_18px_44px_rgba(11,31,42,0.28)]"
+                          }`}
+                        >
+                          Enable Agent
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => openEnforcement("disable_agent", r)}
+                          disabled={busy}
+                          className={`rounded-2xl border px-4 py-3 text-xs font-semibold transition ${
+                            busy
+                              ? "cursor-not-allowed border-black/10 bg-white/70 text-black/40"
+                              : "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                          }`}
+                        >
+                          Disable Agent
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </>
         )}
-      </section>
+      </SectionShell>
 
-      {/* Enforcement modal */}
       {enforce ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={closeEnforcement} />

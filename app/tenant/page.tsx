@@ -1,4 +1,3 @@
-// app/tenant/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -18,10 +17,8 @@ type PropertyRow = {
   rent_frequency?: string | null;
   property_type?: string | null;
   property_class?: string | null;
-
   inspection_fee_ngn?: number | null;
   inspection_fee_validated?: boolean | null;
-
   created_at: string;
 };
 
@@ -32,12 +29,10 @@ type InspectionRow = {
   status: InspectionStatus;
   inspection_fee_ngn: number;
   created_at: string;
-
   scheduled_at?: string | null;
   scheduled_by_user_id?: string | null;
   completed_at?: string | null;
   completed_by_user_id?: string | null;
-
   payment_reference?: string | null;
   paid_at?: string | null;
 };
@@ -51,10 +46,6 @@ function formatDt(s?: string | null) {
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString();
-}
-
-function cleanRef(v: string) {
-  return v.trim();
 }
 
 function shortId(id: string) {
@@ -91,7 +82,7 @@ function Card({
   return (
     <section className="rounded-[28px] border border-black/10 bg-white/70 p-6 shadow-[0_16px_46px_rgba(11,31,42,0.10)] backdrop-blur-xl">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">{title}</div>
           {subtitle ? <p className="mt-1 text-sm text-black/60">{subtitle}</p> : null}
         </div>
@@ -117,7 +108,7 @@ function GhostButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`rounded-2xl border border-black/10 bg-white/70 px-5 py-3 text-sm font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)] disabled:opacity-60 ${className}`}
+      className={`rounded-2xl border border-black/10 bg-white/70 px-5 py-3 text-sm font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)] disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
     >
       {children}
     </button>
@@ -139,7 +130,7 @@ function PrimaryButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`rounded-2xl bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] px-6 py-3 text-sm font-semibold text-white shadow-[0_16px_38px_rgba(10,79,99,0.28)] transition hover:shadow-[0_20px_46px_rgba(10,79,99,0.34)] disabled:opacity-60 ${className}`}
+      className={`rounded-2xl bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] px-6 py-3 text-sm font-semibold text-white shadow-[0_16px_38px_rgba(10,79,99,0.28)] transition hover:shadow-[0_20px_46px_rgba(10,79,99,0.34)] disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
     >
       {children}
     </button>
@@ -167,6 +158,44 @@ function EmptyBox({ title, body }: { title: string; body?: string }) {
   );
 }
 
+function MetricCard({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  tone?: "neutral" | "teal" | "navy" | "amber";
+}) {
+  const ring =
+    tone === "teal"
+      ? "border-[rgba(14,165,163,0.22)] bg-[rgba(14,165,163,0.06)]"
+      : tone === "navy"
+      ? "border-black/10 bg-[rgba(11,31,42,0.04)]"
+      : tone === "amber"
+      ? "border-amber-200 bg-amber-50/70"
+      : "border-black/10 bg-white/70";
+
+  const dot =
+    tone === "teal"
+      ? "bg-[#0ea5a3]"
+      : tone === "navy"
+      ? "bg-[#0b1f2a]"
+      : tone === "amber"
+      ? "bg-amber-500"
+      : "bg-black/40";
+
+  return (
+    <div className={`rounded-[22px] border p-5 shadow-[0_12px_30px_rgba(11,31,42,0.06)] backdrop-blur ${ring}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs font-semibold text-black/60">{label}</div>
+        <span className={`h-2 w-2 rounded-full ${dot}`} style={{ opacity: 0.75 }} />
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-[#0b1f2a]">{value}</div>
+    </div>
+  );
+}
+
 export default function TenantPortalPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -175,7 +204,7 @@ export default function TenantPortalPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
-  const [tenantUserId, setTenantUserId] = useState<string | null>(null);
+  const [, setTenantUserId] = useState<string | null>(null);
 
   const [q, setQ] = useState("");
   const [city, setCity] = useState("");
@@ -200,13 +229,8 @@ export default function TenantPortalPage() {
 
   const [actionId, setActionId] = useState<string | null>(null);
 
-  const [payOpen, setPayOpen] = useState(false);
-  const [payRequestId, setPayRequestId] = useState<string | null>(null);
-  const [payRef, setPayRef] = useState("");
-  const [paySubmitting, setPaySubmitting] = useState(false);
-
   const isSearching = useMemo(() => {
-    return (
+    return !!(
       q.trim() ||
       city.trim() ||
       area.trim() ||
@@ -438,64 +462,8 @@ export default function TenantPortalPage() {
     }
   }
 
-  function openPayModal(requestId: string) {
-    setErrorMsg(null);
-    setToastMsg(null);
-    setPayRequestId(requestId);
-    setPayRef("");
-    setPayOpen(true);
-  }
-
-  function closePayModal() {
-    if (paySubmitting) return;
-    setPayOpen(false);
-    setPayRequestId(null);
-    setPayRef("");
-  }
-
-  async function submitPaid() {
-    setErrorMsg(null);
-    setToastMsg(null);
-
-    const requestId = payRequestId;
-    const ref = cleanRef(payRef);
-
-    if (!requestId) {
-      setErrorMsg("Missing request id.");
-      return;
-    }
-
-    if (ref.length < 8) {
-      setErrorMsg("Payment reference is required (min 8 characters).");
-      return;
-    }
-
-    setPaySubmitting(true);
-    setActionId(`pay:${requestId}`);
-
-    try {
-      const user = await requireTenantUser();
-      if (!user) return;
-
-      const { error } = await supabase.rpc("tenant_mark_inspection_paid", {
-        p_request_id: requestId,
-        p_payment_reference: ref,
-      });
-
-      if (error) throw error;
-
-      setToastMsg("Payment submitted. Status updated to paid.");
-      setPayOpen(false);
-      setPayRequestId(null);
-      setPayRef("");
-
-      await loadMyRequests(user.id);
-    } catch (e: any) {
-      setErrorMsg(e?.message ?? "Failed to mark paid.");
-    } finally {
-      setPaySubmitting(false);
-      setActionId(null);
-    }
+  function goToInspectionPayment(requestId: string) {
+    router.push(`/tenant/inspections/${requestId}`);
   }
 
   function clearSearch() {
@@ -546,6 +514,13 @@ export default function TenantPortalPage() {
               Home
             </button>
           </div>
+        </div>
+
+        <div className="mb-6 grid gap-3 md:grid-cols-4">
+          <MetricCard label="My inspections" value={String(requestCounts.total)} tone="navy" />
+          <MetricCard label="Requested" value={String(requestCounts.requested)} tone="amber" />
+          <MetricCard label="Paid / Scheduled" value={`${requestCounts.paid + requestCounts.scheduled}`} tone="teal" />
+          <MetricCard label="Completed" value={String(requestCounts.completed)} tone="teal" />
         </div>
 
         {errorMsg ? (
@@ -793,7 +768,7 @@ export default function TenantPortalPage() {
                     const busy = actionId === `pay:${r.id}`;
 
                     return (
-                      <div key={r.id} className="rounded-2xl border border-black/10 bg-white p-4">
+                      <div key={r.id} className="rounded-2xl border border-black/10 bg-white p-4 shadow-[0_10px_24px_rgba(11,31,42,0.05)]">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="text-sm font-semibold text-[#0b1f2a]">{title}</div>
@@ -809,14 +784,19 @@ export default function TenantPortalPage() {
 
                             {canPay ? (
                               <button
-                                onClick={() => openPayModal(r.id)}
+                                onClick={() => goToInspectionPayment(r.id)}
                                 disabled={busy}
                                 className="rounded-2xl bg-[#0b1f2a] px-4 py-2 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
                               >
-                                {busy ? "Working…" : "Submit Payment Ref"}
+                                {busy ? "Working…" : "Pay Now"}
                               </button>
                             ) : (
-                              <div className="text-xs text-black/40">—</div>
+                              <button
+                                onClick={() => router.push(`/tenant/inspections/${r.id}`)}
+                                className="rounded-2xl border border-black/10 bg-white/70 px-4 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white"
+                              >
+                                View
+                              </button>
                             )}
                           </div>
                         </div>
@@ -832,61 +812,13 @@ export default function TenantPortalPage() {
                 </div>
               )}
 
-              <div className="mt-4 text-xs text-black/50">Payment references are required. Later we’ll replace this with real payment verification.</div>
+              <div className="mt-4 text-xs text-black/50">
+                Requested inspections now route into Stripe Checkout from the detail page.
+              </div>
             </Card>
           </div>
         )}
       </div>
-
-      {payOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
-          <div className="w-full max-w-lg rounded-[28px] border border-black/10 bg-white p-6 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-semibold text-[#0b1f2a]">Submit payment reference</h3>
-                <p className="mt-1 text-sm text-black/60">Enter the payment reference you received after paying the inspection fee.</p>
-              </div>
-
-              <button
-                onClick={closePayModal}
-                disabled={paySubmitting}
-                className="rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white disabled:opacity-50"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="mt-5">
-              <label className="mb-2 block text-xs font-medium text-black/60">Payment reference</label>
-              <input
-                value={payRef}
-                onChange={(e) => setPayRef(e.target.value)}
-                placeholder="e.g. FLW-9J2K8A1B..."
-                className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none focus:border-black/20"
-              />
-              <p className="mt-2 text-xs text-black/50">Minimum 8 characters. No spaces required.</p>
-            </div>
-
-            <div className="mt-6 flex justify-end gap-2">
-              <button
-                onClick={closePayModal}
-                disabled={paySubmitting}
-                className="rounded-2xl border border-black/10 bg-white/70 px-5 py-3 text-sm font-semibold text-[#0b1f2a] transition hover:bg-white disabled:opacity-50"
-              >
-                Cancel
-              </button>
-
-              <button
-                onClick={submitPaid}
-                disabled={paySubmitting || cleanRef(payRef).length < 8}
-                className="rounded-2xl bg-[#0b1f2a] px-6 py-3 text-sm font-semibold text-white shadow-[0_16px_38px_rgba(11,31,42,0.26)] transition hover:opacity-90 disabled:opacity-50"
-              >
-                {paySubmitting ? "Submitting..." : "Submit"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </main>
   );
 }
@@ -934,6 +866,15 @@ function PropertyCard({
           </div>
           <div className="mt-1 whitespace-nowrap font-semibold tabular-nums leading-tight text-[#0b1f2a]">{feeStr}</div>
         </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {p.property_type ? (
+          <InlinePill tone="border-black/10 bg-white/70 text-black/55">{p.property_type}</InlinePill>
+        ) : null}
+        {p.property_class ? (
+          <InlinePill tone="border-black/10 bg-white/70 text-black/55">{p.property_class}</InlinePill>
+        ) : null}
       </div>
 
       <div className="mt-4 flex items-center justify-between gap-2">

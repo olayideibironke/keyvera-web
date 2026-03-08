@@ -47,13 +47,15 @@ type AuditRow = {
   created_at: string;
 };
 
-type EnforcementMode = null | {
-  kind:
-    | "verify_tenant"
-    | "reject_tenant"
-    | "set_pending_tenant"
-    | "disable_tenant"
-    | "enable_tenant";
+type EnforcementKind =
+  | "verify_tenant"
+  | "reject_tenant"
+  | "set_pending_tenant"
+  | "disable_tenant"
+  | "enable_tenant";
+
+type EnforcementState = {
+  kind: EnforcementKind;
   user_id: string;
   label: string;
 };
@@ -147,8 +149,8 @@ function diffTopLevel(beforeRaw: any, afterRaw: any) {
   Array.from(keys)
     .sort()
     .forEach((k) => {
-      const b = (before as any)?.[k];
-      const a = (after as any)?.[k];
+      const b = before?.[k];
+      const a = after?.[k];
       const changed = JSON.stringify(b) !== JSON.stringify(a);
       out.push({ key: k, before: b, after: a, changed });
     });
@@ -284,12 +286,10 @@ export default function AdminTenantDetailPage() {
 
   const [busy, setBusy] = useState(false);
 
-  // enforcement modal (reason-required)
-  const [enforce, setEnforce] = useState<EnforcementMode>(null);
+  const [enforce, setEnforce] = useState<EnforcementState | null>(null);
   const [reason, setReason] = useState("");
   const [auditErr, setAuditErr] = useState<string | null>(null);
 
-  // diff drawer
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerRow, setDrawerRow] = useState<AuditRow | null>(null);
   const [drawerTab, setDrawerTab] = useState<"diff" | "before" | "after">("diff");
@@ -348,7 +348,6 @@ export default function AdminTenantDetailPage() {
         .order("created_at", { ascending: false });
 
       if (ie) {
-        // Don't block the page if inspections table is not ready
         setInspections([]);
       } else {
         setInspections((ins ?? []) as InspectionRow[]);
@@ -401,7 +400,7 @@ export default function AdminTenantDetailPage() {
     return { counts, revenue, total: inspections.length };
   }, [inspections]);
 
-  const openEnforcement = (kind: EnforcementMode["kind"]) => {
+  const openEnforcement = (kind: EnforcementKind) => {
     if (!tenant) return;
     const label = (tenant.full_name || "").trim() || "Tenant";
     setReason("");
@@ -443,7 +442,6 @@ export default function AdminTenantDetailPage() {
         return;
       }
 
-      // BEFORE snapshot
       const { data: beforeRow, error: be } = await supabase
         .from("profiles")
         .select("user_id,role,verification_status,account_status,full_name,phone,country,created_at,updated_at")
@@ -462,7 +460,6 @@ export default function AdminTenantDetailPage() {
       const { error: upErr } = await supabase.from("profiles").update(patch).eq("user_id", tenant.user_id);
       if (upErr) throw upErr;
 
-      // AFTER snapshot
       const { data: afterRow, error: ae } = await supabase
         .from("profiles")
         .select("user_id,role,verification_status,account_status,full_name,phone,country,created_at,updated_at")
@@ -503,7 +500,6 @@ export default function AdminTenantDetailPage() {
 
   return (
     <main className="min-h-[calc(100vh-140px)]">
-      {/* Header */}
       <div className="mb-8">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div className="min-w-0">
@@ -570,7 +566,6 @@ export default function AdminTenantDetailPage() {
         </div>
       ) : (
         <>
-          {/* Profile + Actions */}
           <SectionShell
             title={
               <>
@@ -627,7 +622,6 @@ export default function AdminTenantDetailPage() {
             </div>
           </SectionShell>
 
-          {/* Tenant KPIs */}
           <div className="mt-6 grid gap-4 md:grid-cols-4">
             <div className="rounded-[28px] border border-black/10 bg-white/70 p-6 shadow-[0_16px_46px_rgba(11,31,42,0.10)] backdrop-blur-xl">
               <div className="text-xs font-semibold text-black/55">Total inspections</div>
@@ -649,7 +643,6 @@ export default function AdminTenantDetailPage() {
             </div>
           </div>
 
-          {/* Inspections */}
           <div className="mt-6">
             <SectionShell title={<h2 className="text-lg font-semibold text-[#0b1f2a]">Inspection history</h2>} subtitle="Latest first • filtered by tenant_user_id">
               {inspections.length === 0 ? (
@@ -696,7 +689,6 @@ export default function AdminTenantDetailPage() {
             </SectionShell>
           </div>
 
-          {/* Enforcement history */}
           <div className="mt-6">
             <SectionShell title={<h2 className="text-lg font-semibold text-[#0b1f2a]">Enforcement trail</h2>} subtitle="From admin_audit_logs (entity_type = tenant). Click an event to open diff drawer.">
               {audits.length === 0 ? (
@@ -743,7 +735,6 @@ export default function AdminTenantDetailPage() {
         </>
       )}
 
-      {/* Enforcement modal */}
       {enforce ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={closeEnforcement} />
@@ -800,7 +791,6 @@ export default function AdminTenantDetailPage() {
         </div>
       ) : null}
 
-      {/* Diff drawer */}
       {drawerOpen && drawerRow ? (
         <div className="fixed inset-0 z-[60]">
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={closeDrawer} />

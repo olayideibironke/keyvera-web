@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -22,6 +22,60 @@ type PropertyRow = {
   inspection_fee_validated: boolean;
   created_at: string;
 };
+
+function formatNgn(n?: number | null) {
+  if (!n) return "—";
+  return `₦${Number(n).toLocaleString()}`;
+}
+
+function formatDt(s?: string | null) {
+  if (!s) return "—";
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString();
+}
+
+function statusTone(status: string) {
+  const s = String(status || "").toLowerCase();
+  if (s === "live") return "border-[rgba(14,165,163,0.25)] bg-[rgba(14,165,163,0.10)] text-[#0a4f63]";
+  if (s === "approved") return "border-[rgba(10,79,99,0.22)] bg-[rgba(10,79,99,0.10)] text-[#0a4f63]";
+  if (s === "pending_review") return "border-amber-200 bg-amber-50 text-amber-900";
+  if (s === "suspended") return "border-red-200 bg-red-50 text-red-700";
+  if (s === "archived") return "border-black/10 bg-white/70 text-black/60";
+  return "border-black/10 bg-white/70 text-black/60";
+}
+
+function StatusBadge({ status }: { status: string }) {
+  return (
+    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(status)}`}>
+      {status}
+    </span>
+  );
+}
+
+function InfoCard({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-[22px] border border-black/10 bg-white/80 p-4 shadow-[0_12px_30px_rgba(11,31,42,0.05)]">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">{label}</div>
+      <div className="mt-2 text-sm text-[#0b1f2a]">{children}</div>
+    </div>
+  );
+}
+
+function HeroStat({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-[22px] border border-black/10 bg-white/75 p-4 shadow-[0_12px_30px_rgba(11,31,42,0.05)]">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">{label}</div>
+      <div className="mt-2 text-lg font-semibold text-[#0b1f2a]">{value}</div>
+    </div>
+  );
+}
 
 export default function LandlordPropertyViewPage() {
   const router = useRouter();
@@ -88,18 +142,28 @@ export default function LandlordPropertyViewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propertyId]);
 
+  const locationLabel = useMemo(() => {
+    if (!row) return "—";
+    return [row.area, row.city, row.state, row.country].filter(Boolean).join(", ") || "—";
+  }, [row]);
+
   return (
-    <main className="mx-auto max-w-5xl px-6 py-10">
-      <div className="mb-6 flex items-center justify-between gap-3">
+    <main className="min-h-[calc(100vh-140px)]">
+      <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Property</h1>
-          <p className="mt-1 text-sm text-black/60">View listing details.</p>
+          <div className="inline-flex items-center gap-3">
+            <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-[#0ea5a3] to-[#0a4f63] shadow-[0_14px_34px_rgba(10,79,99,0.22)]" />
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight text-[#0b1f2a] md:text-3xl">Property</h1>
+              <p className="mt-1 text-sm text-black/60">Detailed listing view for your landlord workspace.</p>
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => router.push("/landlord/properties")}
-            className="rounded-xl border border-black/15 bg-white px-5 py-3 text-sm hover:bg-black/5"
+            className="rounded-2xl border border-black/10 bg-white/70 px-5 py-3 text-sm font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
           >
             Back
           </button>
@@ -107,7 +171,7 @@ export default function LandlordPropertyViewPage() {
           {row?.status === "draft" ? (
             <button
               onClick={() => router.push(`/landlord/properties/${row.id}/edit`)}
-              className="rounded-xl bg-black px-6 py-3 text-sm text-white hover:opacity-90"
+              className="rounded-2xl bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] px-6 py-3 text-sm font-semibold text-white shadow-[0_16px_38px_rgba(10,79,99,0.28)] transition hover:shadow-[0_20px_46px_rgba(10,79,99,0.34)]"
             >
               Edit Draft
             </button>
@@ -116,87 +180,73 @@ export default function LandlordPropertyViewPage() {
       </div>
 
       {error ? (
-        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
+        <div className="mb-6 rounded-[28px] border border-red-200 bg-red-50 p-5 text-sm text-red-700">{error}</div>
       ) : null}
 
       {loading ? (
-        <div className="rounded-2xl border border-black/10 bg-white p-8 text-sm text-black/60">Loading…</div>
+        <div className="rounded-[28px] border border-black/10 bg-white/70 p-8 text-sm text-black/60 shadow-[0_16px_46px_rgba(11,31,42,0.08)] backdrop-blur-xl">
+          Loading…
+        </div>
       ) : row ? (
-        <div className="rounded-3xl border border-black/10 bg-white p-8 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-semibold">{row.title}</h2>
-              <p className="mt-2 text-sm text-black/70">
-                {[row.area, row.city, row.state, row.country].filter(Boolean).join(", ") || "-"}
-              </p>
+        <>
+          <section className="rounded-[32px] border border-black/10 bg-white/70 p-6 shadow-[0_18px_54px_rgba(11,31,42,0.10)] backdrop-blur-xl md:p-7">
+            <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge status={row.status} />
+                  <span className="inline-flex items-center rounded-full border border-black/10 bg-white/75 px-3 py-1 text-xs font-semibold text-black/55">
+                    {row.property_class ?? "standard"}
+                  </span>
+                  <span className="inline-flex items-center rounded-full border border-black/10 bg-white/75 px-3 py-1 text-xs font-semibold text-black/55">
+                    {row.property_type ?? "property"}
+                  </span>
+                </div>
+
+                <h2 className="mt-4 text-2xl font-semibold tracking-tight text-[#0b1f2a] md:text-3xl">{row.title}</h2>
+                <p className="mt-2 max-w-3xl text-sm leading-relaxed text-black/60">{locationLabel}</p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 xl:w-[420px]">
+                <HeroStat
+                  label="Rent"
+                  value={`${formatNgn(row.rent_amount_ngn)}${row.rent_frequency ? ` / ${row.rent_frequency}` : ""}`}
+                />
+                <HeroStat label="Inspection fee" value={formatNgn(row.inspection_fee_ngn)} />
+                <HeroStat label="Created" value={formatDt(row.created_at)} />
+                <HeroStat
+                  label="Fee validation"
+                  value={row.inspection_fee_validated ? "Validated" : "Not validated"}
+                />
+              </div>
             </div>
+          </section>
 
-            <div className="flex items-center gap-2">
-              <StatusBadge status={row.status} />
-              <span className="rounded-full border border-black/10 bg-black/5 px-3 py-1 text-xs">
-                {row.property_class ?? "standard"}
-              </span>
-            </div>
-          </div>
+          <div className="mt-6 grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
+            <section className="rounded-[28px] border border-black/10 bg-white/70 p-6 shadow-[0_16px_46px_rgba(11,31,42,0.10)] backdrop-blur-xl">
+              <div className="text-lg font-semibold text-[#0b1f2a]">Description</div>
+              <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-black/75">{row.description ?? "—"}</p>
+            </section>
 
-          <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2">
-            <Info label="Rent">
-              {row.rent_amount_ngn != null ? `₦${row.rent_amount_ngn.toLocaleString()}` : "-"}{" "}
-              <span className="text-black/50">/ {row.rent_frequency ?? "-"}</span>
-            </Info>
+            <section className="rounded-[28px] border border-black/10 bg-white/70 p-6 shadow-[0_16px_46px_rgba(11,31,42,0.10)] backdrop-blur-xl">
+              <div className="text-lg font-semibold text-[#0b1f2a]">Property details</div>
 
-            <Info label="Property Type">{row.property_type ?? "-"}</Info>
-
-            <Info label="Address Line">{row.address_line ?? "-"}</Info>
-
-            <Info label="Inspection Fee (platform-controlled)">
-              {row.inspection_fee_ngn != null ? `₦${row.inspection_fee_ngn.toLocaleString()}` : "—"}
-              <span className="ml-2 text-xs text-black/50">
-                {row.inspection_fee_validated ? "(validated)" : "(not validated)"}
-              </span>
-            </Info>
-          </div>
-
-          <div className="mt-8">
-            <h3 className="text-sm font-medium">Description</h3>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-black/80">
-              {row.description ?? "-"}
-            </p>
+              <div className="mt-4 grid gap-4">
+                <InfoCard label="Address Line">{row.address_line ?? "—"}</InfoCard>
+                <InfoCard label="Area">{row.area ?? "—"}</InfoCard>
+                <InfoCard label="City">{row.city ?? "—"}</InfoCard>
+                <InfoCard label="State">{row.state ?? "—"}</InfoCard>
+                <InfoCard label="Country">{row.country ?? "—"}</InfoCard>
+              </div>
+            </section>
           </div>
 
           {row.status === "pending_review" ? (
-            <div className="mt-8 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <div className="mt-6 rounded-[28px] border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
               This property is pending review. Editing is disabled until admin action.
             </div>
           ) : null}
-        </div>
+        </>
       ) : null}
     </main>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    draft: "bg-gray-100 text-gray-700",
-    pending_review: "bg-yellow-100 text-yellow-800",
-    approved: "bg-blue-100 text-blue-800",
-    live: "bg-green-100 text-green-800",
-    suspended: "bg-red-100 text-red-800",
-    archived: "bg-gray-100 text-gray-700",
-  };
-
-  return (
-    <span className={`rounded-full px-3 py-1 text-xs font-medium ${styles[status] || styles.draft}`}>
-      {status}
-    </span>
-  );
-}
-
-function Info({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-2xl border border-black/10 bg-white p-4">
-      <div className="text-xs font-medium text-black/60">{label}</div>
-      <div className="mt-1 text-sm">{children}</div>
-    </div>
   );
 }

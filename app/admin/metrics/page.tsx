@@ -1,9 +1,22 @@
-// app/admin/metrics/page.tsx
 "use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { supabase } from "@/lib/supabase";
 
 type InspectionStatus = "requested" | "paid" | "scheduled" | "completed" | "cancelled";
@@ -13,12 +26,9 @@ type InspectionRow = {
   status: InspectionStatus;
   inspection_fee_ngn: number;
   created_at: string;
-
   paid_at?: string | null;
-
   scheduled_at?: string | null;
   scheduled_by_user_id?: string | null;
-
   completed_at?: string | null;
   completed_by_user_id?: string | null;
 };
@@ -26,7 +36,7 @@ type InspectionRow = {
 type ProfileMini = { user_id: string; full_name: string | null };
 
 type TrendRow = {
-  day: string; // YYYY-MM-DD
+  day: string;
   paidCount: number;
   revenue: number;
 };
@@ -57,6 +67,17 @@ const RANGE_OPTIONS: Array<{ label: string; days: number }> = [
   { label: "90d", days: 90 },
   { label: "365d", days: 365 },
 ];
+
+const CHART_COLORS = {
+  teal: "#0ea5a3",
+  tealDark: "#0a4f63",
+  navy: "#0b1f2a",
+  slate: "#64748b",
+  amber: "#f59e0b",
+  red: "#ef4444",
+  gray: "#cbd5e1",
+  grid: "#e5e7eb",
+};
 
 function clampDays(days: number) {
   const d = Math.max(1, Math.floor(Number(days || 0)));
@@ -118,16 +139,26 @@ function toIsoDay(x: any) {
   return `${y}-${m}-${day}`;
 }
 
-function maxNum(arr: number[]) {
-  let m = 0;
-  for (const x of arr) if (Number.isFinite(x) && x > m) m = x;
-  return m;
-}
-
 function shortId(id: string) {
   const s = String(id || "");
   if (s.length <= 14) return s;
   return `${s.slice(0, 8)}…${s.slice(-4)}`;
+}
+
+function formatShortDayLabel(day: string) {
+  const d = new Date(day);
+  if (Number.isNaN(d.getTime())) return day;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function BadgeIcon({ size = 44 }: { size?: number }) {
+  return (
+    <div
+      className="rounded-2xl border border-black/10 bg-white shadow-sm"
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    />
+  );
 }
 
 function RangePills({
@@ -158,7 +189,13 @@ function RangePills({
   );
 }
 
-function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "neutral" | "live" | "warn" }) {
+function Badge({
+  children,
+  tone = "neutral",
+}: {
+  children: React.ReactNode;
+  tone?: "neutral" | "live" | "warn";
+}) {
   const cls =
     tone === "live"
       ? "border-[rgba(14,165,163,0.18)] bg-[rgba(14,165,163,0.10)] text-[#0a4f63]"
@@ -166,7 +203,11 @@ function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone
       ? "border-amber-200 bg-amber-50 text-amber-900"
       : "border-black/10 bg-white/70 text-black/55";
 
-  return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${cls}`}>{children}</span>;
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${cls}`}>
+      {children}
+    </span>
+  );
 }
 
 function SyncBadge({ isSynced }: { isSynced: boolean }) {
@@ -281,6 +322,29 @@ function SectionShell({
   );
 }
 
+function ChartShell({
+  title,
+  subtitle,
+  children,
+  footer,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-[28px] border border-black/10 bg-white/80 p-5 shadow-[0_14px_34px_rgba(11,31,42,0.08)]">
+      <div>
+        <div className="text-sm font-semibold text-[#0b1f2a]">{title}</div>
+        {subtitle ? <div className="mt-1 text-xs leading-relaxed text-black/55">{subtitle}</div> : null}
+      </div>
+      <div className="mt-4 h-[250px] w-full">{children}</div>
+      {footer ? <div className="mt-4">{footer}</div> : null}
+    </div>
+  );
+}
+
 function DataTableShell({ children }: { children: React.ReactNode }) {
   return <div className="overflow-hidden rounded-2xl border border-black/10 bg-white">{children}</div>;
 }
@@ -320,6 +384,60 @@ function WarnState({
   );
 }
 
+function CustomChartTooltip({
+  active,
+  payload,
+  label,
+  formatter,
+}: {
+  active?: boolean;
+  payload?: Array<{ name?: string; value?: number; color?: string }>;
+  label?: string;
+  formatter?: (value: number, name?: string) => string;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+
+  return (
+    <div className="rounded-2xl border border-black/10 bg-white px-4 py-3 shadow-[0_12px_30px_rgba(11,31,42,0.12)]">
+      {label ? <div className="mb-2 text-xs font-semibold text-[#0b1f2a]">{label}</div> : null}
+      <div className="space-y-1.5">
+        {payload.map((item, idx) => {
+          const rawValue = Number(item.value || 0);
+          const text = formatter ? formatter(rawValue, item.name) : String(rawValue);
+          return (
+            <div key={`${item.name}-${idx}`} className="flex items-center gap-2 text-xs text-black/70">
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: item.color || CHART_COLORS.teal }}
+              />
+              <span className="font-medium text-[#0b1f2a]">{item.name}</span>
+              <span>{text}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ChartLegendPill({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: number | string;
+  color: string;
+}) {
+  return (
+    <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-black/10 bg-white/70 px-3 py-1.5 text-xs font-semibold text-[#0b1f2a]">
+      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+      <span className="truncate">{label}</span>
+      <span className="shrink-0 text-black/50">{value}</span>
+    </div>
+  );
+}
+
 export default function AdminMetricsPage() {
   const router = useRouter();
 
@@ -329,23 +447,19 @@ export default function AdminMetricsPage() {
   const [rows, setRows] = useState<InspectionRow[]>([]);
   const [nameMap, setNameMap] = useState<Record<string, string | null>>({});
 
-  // Global range (sync all)
   const [globalDays, setGlobalDays] = useState<number>(30);
 
-  // Platform trend (RPC) + range
   const [trendDays, setTrendDays] = useState<number>(30);
   const [trendLoading, setTrendLoading] = useState(false);
   const [trendErr, setTrendErr] = useState<string | null>(null);
   const [trend, setTrend] = useState<TrendRow[]>([]);
 
-  // Top Properties (RPC) + range + tab
   const [topPropsTab, setTopPropsTab] = useState<TopPropsTab>("revenue");
   const [topPropsDays, setTopPropsDays] = useState<number>(90);
   const [topPropsLoading, setTopPropsLoading] = useState(false);
   const [topPropsErr, setTopPropsErr] = useState<string | null>(null);
   const [topProps, setTopProps] = useState<TopPropertyRow[]>([]);
 
-  // Top Agents (RPC) + range + tab
   const [topAgentsTab, setTopAgentsTab] = useState<TopAgentsTab>("revenue");
   const [topAgentsDays, setTopAgentsDays] = useState<number>(90);
   const [topAgentsLoading, setTopAgentsLoading] = useState(false);
@@ -368,7 +482,11 @@ export default function AdminMetricsPage() {
       return null;
     }
 
-    const { data: profile, error: profErr } = await supabase.from("profiles").select("role").eq("user_id", user.id).maybeSingle();
+    const { data: profile, error: profErr } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("user_id", user.id)
+      .maybeSingle();
 
     if (profErr) throw profErr;
 
@@ -497,20 +615,16 @@ export default function AdminMetricsPage() {
     }
   }
 
-  // Global apply (sync + refresh)
   function applyGlobalRangeAndRefresh() {
     const d = clampDays(globalDays);
-
     setTrendDays(d);
     setTopPropsDays(d);
     setTopAgentsDays(d);
-
     loadTrend(d);
     loadTopProperties(topPropsTab, d);
     loadTopAgents(topAgentsTab, d);
   }
 
-  // Per-section reset (with default tab snap for the tables)
   function resetTrendToGlobal() {
     const d = clampDays(globalDays);
     setTrendDays(d);
@@ -543,7 +657,9 @@ export default function AdminMetricsPage() {
 
       const { data, error } = await supabase
         .from("inspection_requests")
-        .select("id,status,inspection_fee_ngn,created_at,paid_at,scheduled_at,scheduled_by_user_id,completed_at,completed_by_user_id")
+        .select(
+          "id,status,inspection_fee_ngn,created_at,paid_at,scheduled_at,scheduled_by_user_id,completed_at,completed_by_user_id"
+        )
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -561,7 +677,11 @@ export default function AdminMetricsPage() {
       );
 
       if (userIds.length > 0) {
-        const { data: profs, error: profErr2 } = await supabase.from("profiles").select("user_id,full_name").in("user_id", userIds);
+        const { data: profs, error: profErr2 } = await supabase
+          .from("profiles")
+          .select("user_id,full_name")
+          .in("user_id", userIds);
+
         if (profErr2) throw profErr2;
 
         const m: Record<string, string | null> = {};
@@ -573,8 +693,6 @@ export default function AdminMetricsPage() {
         setNameMap({});
       }
 
-      // ✅ Do NOT call RPC loaders here (prevents double-fetch).
-      // Effects below will run once loading becomes false.
       setLoading(false);
     } catch (e: any) {
       setErrorMsg(e?.message ?? "Failed to load metrics.");
@@ -589,7 +707,6 @@ export default function AdminMetricsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // RPC sections load after the base page is ready
   useEffect(() => {
     if (loading) return;
     loadTrend(trendDays);
@@ -642,12 +759,12 @@ export default function AdminMetricsPage() {
       }
 
       if (r.scheduled_at) {
-        const ms = safeMs(r.scheduled_at, r.paid_at ?? null);
+        const ms = safeMs(r.scheduled_at, r.paid_at ?? r.created_at);
         if (ms != null && ms >= 0) toScheduleMs.push(ms);
       }
 
       if (r.completed_at) {
-        const ms = safeMs(r.completed_at, r.scheduled_at ?? null);
+        const ms = safeMs(r.completed_at, r.scheduled_at ?? r.paid_at ?? r.created_at);
         if (ms != null && ms >= 0) toCompleteMs.push(ms);
       }
     }
@@ -668,7 +785,6 @@ export default function AdminMetricsPage() {
     }));
     leaderboard.sort((a, b) => b.completed - a.completed || b.scheduled - a.scheduled);
 
-    // Derived last 7 days (from rows)
     const keys = lastNDaysKeys(7);
     const byDay: Record<string, { paidCount: number; paidRevenue: number }> = {};
     for (const k of keys) byDay[k] = { paidCount: 0, paidRevenue: 0 };
@@ -700,47 +816,67 @@ export default function AdminMetricsPage() {
     };
   }, [rows, nameMap]);
 
-  const trendMaxRevenue = useMemo(() => maxNum(trend.map((t) => t.revenue)), [trend]);
-  const trendMaxCount = useMemo(() => maxNum(trend.map((t) => t.paidCount)), [trend]);
+  const statusChartData = useMemo(
+    () => [
+      { name: "Requested", value: computed.counts.requested, fill: CHART_COLORS.amber },
+      { name: "Paid", value: computed.counts.paid, fill: CHART_COLORS.tealDark },
+      { name: "Scheduled", value: computed.counts.scheduled, fill: CHART_COLORS.navy },
+      { name: "Completed", value: computed.counts.completed, fill: CHART_COLORS.teal },
+      { name: "Cancelled", value: computed.counts.cancelled, fill: CHART_COLORS.red },
+    ],
+    [computed.counts]
+  );
+
+  const funnelChartData = useMemo(
+    () => [
+      { name: "Requested", value: computed.counts.requested, fill: CHART_COLORS.amber },
+      { name: "Paid+", value: computed.paidPlus, fill: CHART_COLORS.teal },
+      { name: "Cancelled", value: computed.counts.cancelled, fill: CHART_COLORS.red },
+    ],
+    [computed.counts.cancelled, computed.counts.requested, computed.paidPlus]
+  );
+
+  const revenueTrendChartData = useMemo(
+    () =>
+      trend.map((t) => ({
+        day: formatShortDayLabel(t.day),
+        revenue: t.revenue,
+        paidCount: t.paidCount,
+      })),
+    [trend]
+  );
 
   return (
-    <main className="min-h-[calc(100vh-140px)]">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div className="min-w-0">
-            <div className="flex items-center gap-3">
-              <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-[0_16px_44px_rgba(11,31,42,0.12)]">
-                <div className="absolute inset-0 bg-[radial-gradient(16px_16px_at_32%_30%,rgba(14,165,163,0.95),transparent_60%),radial-gradient(20px_20px_at_70%_72%,rgba(10,79,99,0.92),transparent_58%)]" />
-                <div className="absolute inset-0 bg-gradient-to-br from-white/25 to-white/0" />
-              </div>
-
-              <div className="min-w-0">
-                <h1 className="truncate text-2xl font-semibold tracking-tight text-[#0b1f2a] md:text-3xl">Admin Metrics</h1>
-                <p className="mt-1 text-sm text-black/60">Platform KPIs, funnel, velocity, and trends.</p>
-              </div>
-            </div>
-
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <Link
-                href="/admin"
-                className="inline-flex items-center justify-center rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_12px_30px_rgba(11,31,42,0.10)]"
-              >
-                ← Admin Home
-              </Link>
-              <Badge tone="live">Live</Badge>
+    <main className="min-h-[calc(100vh-120px)]">
+      <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <div className="inline-flex items-center gap-3">
+            <BadgeIcon size={44} />
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight text-[#0b1f2a] md:text-3xl">Admin Metrics</h1>
+              <p className="mt-1 text-sm text-black/60">Platform KPIs, funnel, velocity, and trends.</p>
             </div>
           </div>
 
-          <div className="flex w-full flex-col gap-3 md:w-auto md:items-end">
-            <div className="text-[11px] font-semibold text-black/50">Global range</div>
-            <div className="flex flex-wrap items-center gap-2">
-              <RangePills valueDays={globalDays} onChangeDays={setGlobalDays} />
-              <PrimaryButton onClick={applyGlobalRangeAndRefresh}>Apply</PrimaryButton>
-              <SecondaryButton onClick={load} className="px-5 py-2">
-                Refresh
-              </SecondaryButton>
-            </div>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Link
+              href="/admin"
+              className="rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+            >
+              ← Admin Home
+            </Link>
+            <Badge tone="live">Live</Badge>
+          </div>
+        </div>
+
+        <div className="flex w-full flex-col gap-3 md:w-auto md:items-end">
+          <div className="text-[11px] font-semibold text-black/50">Global range</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <RangePills valueDays={globalDays} onChangeDays={setGlobalDays} />
+            <PrimaryButton onClick={applyGlobalRangeAndRefresh}>Apply</PrimaryButton>
+            <SecondaryButton onClick={load} className="px-5 py-2">
+              Refresh
+            </SecondaryButton>
           </div>
         </div>
       </div>
@@ -755,7 +891,6 @@ export default function AdminMetricsPage() {
         </div>
       ) : (
         <>
-          {/* KPI cards */}
           <div className="grid gap-4 md:grid-cols-4">
             <KpiCard label="Total inspections" value={`${computed.total}`} hint="All inspection requests (lifetime)." />
             <KpiCard label="Paid+" value={`${computed.paidPlus}`} hint="Paid, Scheduled, or Completed." />
@@ -763,7 +898,108 @@ export default function AdminMetricsPage() {
             <KpiCard label="Conversion" value={`${Math.round(computed.conversion * 100)}%`} hint="Paid+ / Total." />
           </div>
 
-          {/* Platform trend */}
+          <div className="mt-6 grid gap-6 xl:grid-cols-3">
+            <ChartShell title="Inspection status mix" subtitle="Clean count view across current lifecycle stages.">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={statusChartData} barCategoryGap={26} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART_COLORS.grid} />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fill: "#475569", fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                    interval={0}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    tick={{ fill: "#475569", fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={28}
+                  />
+                  <Tooltip content={<CustomChartTooltip formatter={(value) => `${value}`} />} />
+                  <Bar dataKey="value" radius={[10, 10, 0, 0]} maxBarSize={42}>
+                    {statusChartData.map((entry) => (
+                      <Cell key={entry.name} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartShell>
+
+            <ChartShell title="Revenue trend" subtitle="Neater revenue read for the selected platform trend range.">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={revenueTrendChartData} margin={{ top: 10, right: 8, left: 8, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART_COLORS.grid} />
+                  <XAxis
+                    dataKey="day"
+                    tick={{ fill: "#475569", fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                    minTickGap={18}
+                  />
+                  <YAxis
+                    tick={{ fill: "#475569", fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={64}
+                    tickFormatter={(value) => `₦${Number(value).toLocaleString()}`}
+                  />
+                  <Tooltip
+                    content={
+                      <CustomChartTooltip
+                        formatter={(value, name) => (name === "Revenue" ? formatNgn(value) : `${value}`)}
+                      />
+                    }
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="revenue"
+                    name="Revenue"
+                    stroke={CHART_COLORS.teal}
+                    strokeWidth={3}
+                    dot={{ r: 3.5, fill: CHART_COLORS.teal }}
+                    activeDot={{ r: 5 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </ChartShell>
+
+            <ChartShell
+              title="Funnel share"
+              subtitle="Requested vs Paid+ vs Cancelled."
+              footer={
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {funnelChartData.map((item) => (
+                    <ChartLegendPill key={item.name} label={item.name} value={item.value} color={item.fill} />
+                  ))}
+                </div>
+              }
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart margin={{ top: 6, right: 6, left: 6, bottom: 6 }}>
+                  <Pie
+                    data={funnelChartData}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={62}
+                    outerRadius={92}
+                    paddingAngle={4}
+                    cx="50%"
+                    cy="47%"
+                    stroke="rgba(255,255,255,0.9)"
+                    strokeWidth={2}
+                  >
+                    {funnelChartData.map((entry) => (
+                      <Cell key={entry.name} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomChartTooltip formatter={(value) => `${value}`} />} />
+                </PieChart>
+              </ResponsiveContainer>
+            </ChartShell>
+          </div>
+
           <div className="mt-6">
             <SectionShell
               title={
@@ -780,7 +1016,7 @@ export default function AdminMetricsPage() {
                   ) : null}
                 </>
               }
-              subtitle="Daily paid+ count and revenue (RPC-driven)."
+              subtitle="Daily paid+ count and revenue."
               right={
                 <>
                   <div className="flex flex-col items-end">
@@ -817,8 +1053,10 @@ export default function AdminMetricsPage() {
                     </TableHead>
                     <tbody>
                       {trend.map((t) => {
-                        const wRev = trendMaxRevenue > 0 ? Math.round((t.revenue / trendMaxRevenue) * 100) : 0;
-                        const wCnt = trendMaxCount > 0 ? Math.round((t.paidCount / trendMaxCount) * 100) : 0;
+                        const maxRevenue = Math.max(...trend.map((x) => x.revenue), 0);
+                        const maxCount = Math.max(...trend.map((x) => x.paidCount), 0);
+                        const wRev = maxRevenue > 0 ? Math.round((t.revenue / maxRevenue) * 100) : 0;
+                        const wCnt = maxCount > 0 ? Math.round((t.paidCount / maxCount) * 100) : 0;
 
                         return (
                           <tr key={t.day} className="border-t border-black/5">
@@ -851,9 +1089,7 @@ export default function AdminMetricsPage() {
             </SectionShell>
           </div>
 
-          {/* Top Properties + Top Agents */}
           <section className="mt-6 grid gap-6 md:grid-cols-2">
-            {/* Top Properties */}
             <SectionShell
               title={
                 <>
@@ -942,7 +1178,6 @@ export default function AdminMetricsPage() {
               )}
             </SectionShell>
 
-            {/* Top Agents */}
             <SectionShell
               title={
                 <>
@@ -1032,7 +1267,6 @@ export default function AdminMetricsPage() {
             </SectionShell>
           </section>
 
-          {/* Funnel */}
           <div className="mt-6">
             <SectionShell title={<h2 className="text-lg font-semibold text-[#0b1f2a]">Funnel</h2>} subtitle="Counts by inspection status.">
               <div className="grid gap-3 md:grid-cols-5">
@@ -1045,7 +1279,6 @@ export default function AdminMetricsPage() {
             </SectionShell>
           </div>
 
-          {/* Velocity */}
           <div className="mt-6">
             <SectionShell title={<h2 className="text-lg font-semibold text-[#0b1f2a]">Velocity</h2>} subtitle="Average time between lifecycle steps.">
               <div className="grid gap-4 md:grid-cols-2">
@@ -1055,7 +1288,6 @@ export default function AdminMetricsPage() {
             </SectionShell>
           </div>
 
-          {/* Last 7 days (derived) */}
           <div className="mt-6">
             <SectionShell title={<h2 className="text-lg font-semibold text-[#0b1f2a]">Last 7 days</h2>} subtitle="Daily paid count and revenue (derived).">
               <DataTableShell>
@@ -1081,7 +1313,6 @@ export default function AdminMetricsPage() {
             </SectionShell>
           </div>
 
-          {/* Agent leaderboard (derived) */}
           <div className="mt-6">
             <SectionShell title={<h2 className="text-lg font-semibold text-[#0b1f2a]">Agent leaderboard</h2>} subtitle="Counts based on scheduled_by and completed_by.">
               {computed.leaderboard.length === 0 ? (
@@ -1137,9 +1368,7 @@ function KpiCard({
           {hint ? <div className="mt-2 text-xs leading-relaxed text-black/50">{hint}</div> : null}
         </div>
 
-        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-[0_14px_36px_rgba(11,31,42,0.10)]">
-          <div className="absolute inset-0 bg-[radial-gradient(14px_14px_at_32%_30%,rgba(14,165,163,0.95),transparent_60%),radial-gradient(18px_18px_at_72%_72%,rgba(10,79,99,0.92),transparent_58%)]" />
-        </div>
+        <div className="h-10 w-10 shrink-0 rounded-2xl border border-black/10 bg-white shadow-sm" />
       </div>
     </div>
   );

@@ -1,4 +1,3 @@
-// app/landlord/properties/new/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -34,6 +33,138 @@ function isPositiveNumberString(v: string) {
   return Number.isFinite(n) && n > 0;
 }
 
+function PageShell({ children }: { children: React.ReactNode }) {
+  return (
+    <main className="min-h-[calc(100vh-140px)]">
+      <div className="mx-auto w-full max-w-5xl">{children}</div>
+    </main>
+  );
+}
+
+function SectionCard({
+  title,
+  subtitle,
+  right,
+  children,
+}: {
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-[32px] border border-black/10 bg-white/70 p-6 shadow-[0_18px_54px_rgba(11,31,42,0.10)] backdrop-blur-xl md:p-7">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">{title}</div>
+          {subtitle ? <p className="mt-1 text-sm leading-relaxed text-black/60">{subtitle}</p> : null}
+        </div>
+        {right ? <div className="flex flex-wrap items-center gap-2">{right}</div> : null}
+      </div>
+      <div className="mt-6">{children}</div>
+    </section>
+  );
+}
+
+function StatPill({
+  children,
+  tone = "neutral",
+}: {
+  children: React.ReactNode;
+  tone?: "neutral" | "good" | "warn";
+}) {
+  const cls =
+    tone === "good"
+      ? "border-[rgba(14,165,163,0.22)] bg-[rgba(14,165,163,0.10)] text-[#0a4f63]"
+      : tone === "warn"
+      ? "border-amber-200 bg-amber-50 text-amber-900"
+      : "border-black/10 bg-white/75 text-black/55";
+
+  return <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${cls}`}>{children}</span>;
+}
+
+function Message({
+  tone,
+  children,
+}: {
+  tone: "error" | "warn" | "info";
+  children: React.ReactNode;
+}) {
+  const cls =
+    tone === "error"
+      ? "border-red-200 bg-red-50 text-red-700"
+      : tone === "warn"
+      ? "border-amber-200 bg-amber-50 text-amber-900"
+      : "border-black/10 bg-white/70 text-black/70";
+
+  return <div className={`rounded-[24px] border p-4 text-sm ${cls}`}>{children}</div>;
+}
+
+function GhostButton({
+  children,
+  onClick,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="rounded-2xl border border-black/10 bg-white/70 px-5 py-3 text-sm font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)] disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      {children}
+    </button>
+  );
+}
+
+function PrimaryButton({
+  children,
+  onClick,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="rounded-2xl bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] px-6 py-3 text-sm font-semibold text-white shadow-[0_16px_38px_rgba(10,79,99,0.28)] transition hover:shadow-[0_20px_46px_rgba(10,79,99,0.34)] disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      {children}
+    </button>
+  );
+}
+
+function Field({
+  label,
+  required = false,
+  hint,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-semibold text-[#0b1f2a]">
+        {label}
+        {required ? <span className="ml-1 text-[#0a4f63]">*</span> : null}
+      </label>
+      {children}
+      {hint ? <p className="mt-2 text-xs text-black/45">{hint}</p> : null}
+    </div>
+  );
+}
+
 export default function LandlordCreatePropertyPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -45,7 +176,6 @@ export default function LandlordCreatePropertyPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
-  // MUST be landlords.id (FK used by properties.owner_landlord_id)
   const [landlordId, setLandlordId] = useState<string | null>(null);
   const [landlordProfileMissing, setLandlordProfileMissing] = useState(false);
 
@@ -99,7 +229,6 @@ export default function LandlordCreatePropertyPage() {
     if (isBusy) return false;
     if (!userId) return false;
     if (!landlordId || landlordProfileMissing) return false;
-    // Project rule: description required
     if (!t(form.description)) return false;
     return true;
   }, [isBusy, userId, landlordId, landlordProfileMissing, form.description]);
@@ -119,11 +248,7 @@ export default function LandlordCreatePropertyPage() {
   }
 
   async function fetchLandlordRowByUserId(authUid: string): Promise<LandlordRow | null> {
-    const { data, error } = await supabase
-      .from("landlords")
-      .select("id, user_id")
-      .eq("user_id", authUid)
-      .maybeSingle();
+    const { data, error } = await supabase.from("landlords").select("id, user_id").eq("user_id", authUid).maybeSingle();
 
     if (error) throw error;
     return (data as LandlordRow) ?? null;
@@ -133,11 +258,7 @@ export default function LandlordCreatePropertyPage() {
     const existing = await fetchLandlordRowByUserId(authUid);
     if (existing) return existing;
 
-    const { data, error } = await supabase
-      .from("landlords")
-      .insert({ user_id: authUid })
-      .select("id, user_id")
-      .maybeSingle();
+    const { data, error } = await supabase.from("landlords").insert({ user_id: authUid }).select("id, user_id").maybeSingle();
 
     if (error) throw error;
     if (data) return data as LandlordRow;
@@ -207,7 +328,6 @@ export default function LandlordCreatePropertyPage() {
       property_type: form.property_type,
       property_class: form.property_class,
       status,
-      // landlord-locked
       inspection_fee_ngn: 0,
       inspection_fee_validated: false,
     };
@@ -280,94 +400,105 @@ export default function LandlordCreatePropertyPage() {
   const showRequiredWarning = attemptedSubmit && !loading && missingRequired.length > 0;
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-6 py-10">
-      <div className="rounded-3xl border border-black/15 bg-white p-8 shadow-sm">
-        <h1 className="text-3xl font-semibold tracking-tight">Create Property</h1>
-        <p className="mt-2 text-sm text-black/70">
-          Add your listing details, save as draft, then submit for review. Inspection fees are set internally by Keyvera
-          after review.
-        </p>
+    <PageShell>
+      <SectionCard
+        title={<h1 className="text-2xl font-semibold tracking-tight text-[#0b1f2a] md:text-3xl">Create Property</h1>}
+        subtitle="Add your listing details, save as draft, then submit for review. Inspection fees are set internally by Keyvera after review."
+        right={
+          <div className="flex flex-wrap items-center gap-2">
+            <GhostButton onClick={() => router.push("/landlord/properties")} disabled={isBusy}>
+              Back
+            </GhostButton>
+            <StatPill tone={propertyId ? "good" : "neutral"}>{propertyId ? "Draft created" : "New listing"}</StatPill>
+          </div>
+        }
+      >
+        <div className="mb-6 flex flex-wrap items-center gap-2">
+          <StatPill tone={loading ? "neutral" : landlordProfileMissing ? "warn" : "good"}>
+            {loading ? "Checking session…" : landlordProfileMissing ? "Landlord profile missing" : "Landlord access ready"}
+          </StatPill>
+          {userEmail ? <StatPill>Logged in as {userEmail}</StatPill> : null}
+          {propertyId ? <StatPill>Draft ID: {propertyId}</StatPill> : null}
+        </div>
 
         {pageError ? (
-          <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {pageError}
+          <div className="mb-5">
+            <Message tone="error">{pageError}</Message>
           </div>
         ) : null}
 
         {landlordProfileMissing ? (
-          <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            Missing landlord profile — you can’t create properties yet.
+          <div className="mb-5">
+            <Message tone="warn">Missing landlord profile — you can’t create properties yet.</Message>
           </div>
         ) : null}
 
         {showRequiredWarning ? (
-          <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            Please complete all required fields before submitting for review.
+          <div className="mb-5">
+            <Message tone="error">Please complete all required fields before submitting for review.</Message>
           </div>
         ) : null}
 
-        <div className="mt-8 grid grid-cols-1 gap-5">
-          <Field label="Title *">
+        <div className="grid gap-5">
+          <Field label="Title" required hint="Use a clear market-facing title for the listing.">
             <input
-              className="w-full rounded-xl border border-black/20 px-4 py-3 outline-none focus:border-black"
+              className="w-full rounded-2xl border border-black/10 bg-white/75 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.35)] focus:ring-4 focus:ring-[rgba(14,165,163,0.10)]"
               value={form.title}
               onChange={(e) => update("title", e.target.value)}
               placeholder="e.g., 2 Bedroom Apartment in Lekki Phase 1"
             />
           </Field>
 
-          <Field label="Description *">
+          <Field label="Description" required hint="Describe the condition, layout, features, and rules.">
             <textarea
-              className="min-h-[140px] w-full rounded-xl border border-black/20 px-4 py-3 outline-none focus:border-black"
+              className="min-h-[150px] w-full rounded-2xl border border-black/10 bg-white/75 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.35)] focus:ring-4 focus:ring-[rgba(14,165,163,0.10)]"
               value={form.description}
               onChange={(e) => update("description", e.target.value)}
               placeholder="Rooms, features, condition, rules, what’s included…"
             />
-            {!t(form.description) && !loading ? (
-              <p className="mt-2 text-xs text-red-700">Description is required.</p>
-            ) : null}
+            {!t(form.description) && !loading ? <p className="mt-2 text-xs text-red-700">Description is required.</p> : null}
           </Field>
 
-          <Field label="Address Line (optional)">
+          <Field label="Address Line" hint="Optional. Public address can remain limited until booking.">
             <input
-              className="w-full rounded-xl border border-black/20 px-4 py-3 outline-none focus:border-black"
+              className="w-full rounded-2xl border border-black/10 bg-white/75 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.35)] focus:ring-4 focus:ring-[rgba(14,165,163,0.10)]"
               value={form.address_line}
               onChange={(e) => update("address_line", e.target.value)}
               placeholder="e.g., Surulere (public address hidden until booking)"
             />
           </Field>
 
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-            <Field label="Area *">
+          <div className="grid gap-5 md:grid-cols-2">
+            <Field label="Area" required>
               <input
-                className="w-full rounded-xl border border-black/20 px-4 py-3 outline-none focus:border-black"
+                className="w-full rounded-2xl border border-black/10 bg-white/75 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.35)] focus:ring-4 focus:ring-[rgba(14,165,163,0.10)]"
                 value={form.area}
                 onChange={(e) => update("area", e.target.value)}
                 placeholder="e.g., Ijesha"
               />
             </Field>
 
-            <Field label="City *">
+            <Field label="City" required>
               <input
-                className="w-full rounded-xl border border-black/20 px-4 py-3 outline-none focus:border-black"
+                className="w-full rounded-2xl border border-black/10 bg-white/75 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.35)] focus:ring-4 focus:ring-[rgba(14,165,163,0.10)]"
                 value={form.city}
                 onChange={(e) => update("city", e.target.value)}
                 placeholder="e.g., Surulere"
               />
             </Field>
 
-            <Field label="State *">
+            <Field label="State" required>
               <input
-                className="w-full rounded-xl border border-black/20 px-4 py-3 outline-none focus:border-black"
+                className="w-full rounded-2xl border border-black/10 bg-white/75 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.35)] focus:ring-4 focus:ring-[rgba(14,165,163,0.10)]"
                 value={form.state}
                 onChange={(e) => update("state", e.target.value)}
                 placeholder="e.g., Lagos"
               />
             </Field>
 
-            <Field label="Country *">
+            <Field label="Country" required>
               <input
-                className="w-full rounded-xl border border-black/20 px-4 py-3 outline-none focus:border-black"
+                className="w-full rounded-2xl border border-black/10 bg-white/75 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.35)] focus:ring-4 focus:ring-[rgba(14,165,163,0.10)]"
                 value={form.country}
                 onChange={(e) => update("country", e.target.value)}
                 placeholder="e.g., Nigeria"
@@ -375,12 +506,12 @@ export default function LandlordCreatePropertyPage() {
             </Field>
           </div>
 
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-            <Field label="Rent Amount (₦) *">
+          <div className="grid gap-5 md:grid-cols-2">
+            <Field label="Rent Amount (₦)" required>
               <input
                 type="number"
                 inputMode="numeric"
-                className="w-full rounded-xl border border-black/20 px-4 py-3 outline-none focus:border-black"
+                className="w-full rounded-2xl border border-black/10 bg-white/75 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.35)] focus:ring-4 focus:ring-[rgba(14,165,163,0.10)]"
                 value={form.rent_amount_ngn}
                 onChange={(e) => update("rent_amount_ngn", e.target.value)}
                 placeholder="e.g., 3500000"
@@ -388,9 +519,9 @@ export default function LandlordCreatePropertyPage() {
               />
             </Field>
 
-            <Field label="Rent Frequency *">
+            <Field label="Rent Frequency" required>
               <select
-                className="w-full rounded-xl border border-black/20 px-4 py-3 outline-none focus:border-black"
+                className="w-full rounded-2xl border border-black/10 bg-white/75 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.35)] focus:ring-4 focus:ring-[rgba(14,165,163,0.10)]"
                 value={form.rent_frequency}
                 onChange={(e) => update("rent_frequency", e.target.value as any)}
               >
@@ -401,9 +532,9 @@ export default function LandlordCreatePropertyPage() {
               </select>
             </Field>
 
-            <Field label="Property Type *">
+            <Field label="Property Type" required>
               <select
-                className="w-full rounded-xl border border-black/20 px-4 py-3 outline-none focus:border-black"
+                className="w-full rounded-2xl border border-black/10 bg-white/75 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.35)] focus:ring-4 focus:ring-[rgba(14,165,163,0.10)]"
                 value={form.property_type}
                 onChange={(e) => update("property_type", e.target.value as any)}
               >
@@ -415,9 +546,9 @@ export default function LandlordCreatePropertyPage() {
               </select>
             </Field>
 
-            <Field label="Property Class *">
+            <Field label="Property Class" required>
               <select
-                className="w-full rounded-xl border border-black/20 px-4 py-3 outline-none focus:border-black"
+                className="w-full rounded-2xl border border-black/10 bg-white/75 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.35)] focus:ring-4 focus:ring-[rgba(14,165,163,0.10)]"
                 value={form.property_class}
                 onChange={(e) => update("property_class", e.target.value as any)}
               >
@@ -429,52 +560,18 @@ export default function LandlordCreatePropertyPage() {
           </div>
 
           <div className="mt-2 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              disabled={!canSaveDraft}
-              onClick={saveDraft}
-              className={[
-                "rounded-xl px-6 py-3 text-sm font-medium",
-                canSaveDraft ? "bg-black text-white hover:bg-black/90" : "cursor-not-allowed bg-black/50 text-white",
-              ].join(" ")}
-            >
+            <PrimaryButton onClick={saveDraft} disabled={!canSaveDraft}>
               {savingAction === "draft" ? "Saving..." : "Save Draft"}
-            </button>
+            </PrimaryButton>
 
-            <button
-              type="button"
-              disabled={!canSubmit}
-              onClick={submitForReview}
-              className={[
-                "rounded-xl border px-6 py-3 text-sm font-medium",
-                canSubmit
-                  ? "border-black/25 bg-white text-black hover:bg-black/5"
-                  : "cursor-not-allowed border-black/15 bg-white text-black/40",
-              ].join(" ")}
-            >
+            <GhostButton onClick={submitForReview} disabled={!canSubmit}>
               {savingAction === "submit" ? "Submitting..." : "Submit for Review"}
-            </button>
-
-            {propertyId ? (
-              <span className="text-xs text-black/60">
-                Draft ID: <span className="font-mono">{propertyId}</span>
-              </span>
-            ) : null}
+            </GhostButton>
           </div>
 
           {loading ? <p className="text-sm text-black/60">Loading…</p> : null}
-          {userEmail ? <p className="text-xs text-black/40">Logged in as: {userEmail}</p> : null}
         </div>
-      </div>
-    </main>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="mb-2 block text-sm font-medium">{label}</label>
-      {children}
-    </div>
+      </SectionCard>
+    </PageShell>
   );
 }
