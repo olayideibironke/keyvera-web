@@ -21,13 +21,15 @@ type LandlordRow = {
   updated_at: string;
 };
 
-type EnforcementMode = null | {
-  kind:
-    | "verify_landlord"
-    | "reject_landlord"
-    | "set_pending_landlord"
-    | "disable_landlord"
-    | "enable_landlord";
+type EnforcementKind =
+  | "verify_landlord"
+  | "reject_landlord"
+  | "set_pending_landlord"
+  | "disable_landlord"
+  | "enable_landlord";
+
+type EnforcementState = {
+  kind: EnforcementKind;
   user_id: string;
   label: string;
 };
@@ -157,7 +159,7 @@ export default function AdminLandlordsPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const [enforce, setEnforce] = useState<EnforcementMode>(null);
+  const [enforce, setEnforce] = useState<EnforcementState | null>(null);
   const [reason, setReason] = useState("");
   const [auditErr, setAuditErr] = useState<string | null>(null);
 
@@ -204,7 +206,7 @@ export default function AdminLandlordsPage() {
     return { label: `${pendingCount} pending review`, tone: "good" as const };
   }, [loading, errorMsg, pendingCount]);
 
-  const openEnforcement = (kind: EnforcementMode["kind"], row: LandlordRow) => {
+  const openEnforcement = (kind: EnforcementKind, row: LandlordRow) => {
     const label = (row.full_name || "").trim() || "Landlord";
     setReason("");
     setAuditErr(null);
