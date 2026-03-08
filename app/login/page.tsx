@@ -258,7 +258,9 @@ function LoginPageContent() {
       const cleanName = fullName.trim();
       const roleHome = getRoleHome(inferredRole);
       const emailRedirectTo =
-        typeof window !== "undefined" ? `${window.location.origin}${roleHome}` : undefined;
+        typeof window !== "undefined"
+          ? `${window.location.origin}/auth/confirm?next=${encodeURIComponent(roleHome)}`
+          : undefined;
 
       const { data, error } = await supabase.auth.signUp({
         email: cleanEmail,
@@ -281,7 +283,7 @@ function LoginPageContent() {
       const user = data.user ?? null;
 
       if (!session || !user) {
-        setSuccessMsg("Signup successful. Check your email to confirm your account, then sign in.");
+        setSuccessMsg("Signup successful. Check your email to confirm your account, then continue.");
         return;
       }
 
