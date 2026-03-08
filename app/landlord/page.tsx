@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type Property = {
@@ -49,16 +50,12 @@ type InspectionRow = {
   status: InspectionStatus;
   inspection_fee_ngn: number;
   created_at: string;
-
   payment_reference?: string | null;
   paid_at?: string | null;
-
   scheduled_at?: string | null;
   scheduled_by_user_id?: string | null;
-
   completed_at?: string | null;
   completed_by_user_id?: string | null;
-
   tenant_full_name?: string | null;
   scheduled_by_full_name?: string | null;
   completed_by_full_name?: string | null;
@@ -79,9 +76,7 @@ function maskRef(ref?: string | null) {
   const v = String(ref ?? "").trim();
   if (!v) return "—";
   if (v.length <= 10) return "••••••••";
-  const head = v.slice(0, 6);
-  const tail = v.slice(-4);
-  return `${head}••••${tail}`;
+  return `${v.slice(0, 6)}••••${v.slice(-4)}`;
 }
 
 function shortId(id: string) {
@@ -204,6 +199,28 @@ function PrimaryButton({
   );
 }
 
+function LandingPrimaryLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] px-6 py-3 text-sm font-semibold text-white shadow-[0_16px_38px_rgba(10,79,99,0.28)] transition hover:shadow-[0_20px_46px_rgba(10,79,99,0.34)]"
+    >
+      {children}
+    </Link>
+  );
+}
+
+function LandingSecondaryLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex items-center justify-center rounded-2xl border border-black/10 bg-white px-6 py-3 text-sm font-semibold text-[#0b1f2a] shadow-sm transition hover:bg-black/[0.03]"
+    >
+      {children}
+    </Link>
+  );
+}
+
 function InlinePill({ children, tone }: { children: React.ReactNode; tone: string }) {
   return <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${tone}`}>{children}</span>;
 }
@@ -271,6 +288,21 @@ function StatCard({
   );
 }
 
+function LandingInfoCard({
+  title,
+  body,
+}: {
+  title: string;
+  body: string;
+}) {
+  return (
+    <div className="rounded-[24px] border border-black/10 bg-white/80 p-5 shadow-[0_14px_34px_rgba(11,31,42,0.06)]">
+      <div className="text-lg font-semibold text-[#0b1f2a]">{title}</div>
+      <p className="mt-2 text-sm leading-7 text-black/60">{body}</p>
+    </div>
+  );
+}
+
 function tagErr(context: string, e: any) {
   const msg = e?.message ? String(e.message) : String(e ?? "Unknown error");
   return new Error(`[${context}] ${msg}`);
@@ -278,11 +310,10 @@ function tagErr(context: string, e: any) {
 
 export default function LandlordPropertiesPage() {
   const router = useRouter();
-  const pathname = usePathname();
 
   const [authChecked, setAuthChecked] = useState(false);
+  const [hasSession, setHasSession] = useState(false);
   const [authorized, setAuthorized] = useState(false);
-  const [redirecting, setRedirecting] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [properties, setProperties] = useState<Property[]>([]);
@@ -312,23 +343,22 @@ export default function LandlordPropertiesPage() {
   const [inspectionsErr, setInspectionsErr] = useState<string | null>(null);
   const [inspectionPropertyId, setInspectionPropertyId] = useState<string>("");
 
-  function redirectToLogin() {
-    const next = encodeURIComponent(pathname || "/landlord");
-    setRedirecting(true);
-    window.location.replace(`/login?next=${next}`);
-  }
+  async function resolveLandlordAccess() {
+    const {
+      data: { user },
+      error: userErr,
+    } = await supabase.auth.getUser();
 
-  async function requireLandlordUser() {
-    const { data: userData, error: userErr } = await supabase.auth.getUser();
     if (userErr) throw tagErr("auth.getUser", userErr);
 
-    const user = userData.user;
     if (!user) {
+      setHasSession(false);
       setAuthorized(false);
       setAuthChecked(true);
-      redirectToLogin();
       return null;
     }
+
+    setHasSession(true);
 
     const { data: profile, error: profErr } = await supabase
       .from("profiles")
@@ -338,17 +368,40 @@ export default function LandlordPropertiesPage() {
 
     if (profErr) throw tagErr("profiles.select(role)", profErr);
 
-    if (!profile || profile.role !== "landlord") {
+    const role = String(profile?.role || "").toLowerCase();
+
+    if (role && role !== "landlord") {
       setAuthorized(false);
       setAuthChecked(true);
-      redirectToLogin();
+
+      if (role === "tenant") {
+        router.replace("/tenant");
+        return null;
+      }
+
+      if (role === "agent") {
+        router.replace("/agent");
+        return null;
+      }
+
+      if (role === "admin") {
+        router.replace("/admin");
+        return null;
+      }
+
       return null;
     }
 
-    setLandlordUserId(user.id);
-    setAuthorized(true);
+    if (role === "landlord") {
+      setLandlordUserId(user.id);
+      setAuthorized(true);
+      setAuthChecked(true);
+      return user;
+    }
+
+    setAuthorized(false);
     setAuthChecked(true);
-    return user;
+    return null;
   }
 
   async function loadAuthorizations(propertyIds: string[]) {
@@ -487,8 +540,14 @@ export default function LandlordPropertiesPage() {
     setActionErr(null);
 
     try {
-      const user = await requireLandlordUser();
-      if (!user) return;
+      const user = await resolveLandlordAccess();
+
+      if (!user) {
+        setProperties([]);
+        setAuthorizations([]);
+        setInspections([]);
+        return;
+      }
 
       const { data: landlordRow, error: landlordErr } = await supabase
         .from("landlords")
@@ -742,7 +801,91 @@ export default function LandlordPropertiesPage() {
     }
   }
 
-  if (redirecting || (!authChecked && !authorized) || (!authorized && authChecked)) {
+  if (!authChecked) {
+    return null;
+  }
+
+  if (!hasSession) {
+    return (
+      <PageShell>
+        <section className="relative overflow-hidden rounded-[34px] border border-black/10 bg-white shadow-[0_16px_46px_rgba(11,31,42,0.10)]">
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                "radial-gradient(820px 360px at 12% 0%, rgba(14,165,163,0.16), rgba(255,255,255,0) 60%), radial-gradient(700px 320px at 88% 0%, rgba(11,31,42,0.10), rgba(255,255,255,0) 58%)",
+            }}
+          />
+
+          <div className="relative grid gap-8 p-8 md:grid-cols-12 md:p-10">
+            <div className="md:col-span-7">
+              <div className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/80 px-4 py-2 text-xs font-semibold text-[#0b1f2a] shadow-sm">
+                <span className="h-2 w-2 rounded-full bg-[#0ea5a3]" style={{ opacity: 0.75 }} />
+                Welcome to Keyvera for Landlords
+              </div>
+
+              <h1 className="mt-5 text-4xl font-extrabold leading-tight tracking-tight text-[#0b1f2a] md:text-5xl">
+                Manage your properties in a safer, more professional rental workflow.
+              </h1>
+
+              <p className="mt-5 max-w-2xl text-base leading-8 text-black/65">
+                Keyvera helps landlords present listings more professionally, manage inspection activity, and operate in
+                a structured marketplace built around trust, verification, and accountability.
+              </p>
+
+              <div className="mt-8 flex flex-wrap gap-3">
+                <LandingPrimaryLink href="/login?next=/landlord">Sign In</LandingPrimaryLink>
+                <LandingSecondaryLink href="/login?next=/landlord&mode=signup">Sign Up</LandingSecondaryLink>
+              </div>
+
+              <div className="mt-8 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-black/10 bg-white/80 p-4 shadow-sm">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-black/45">Visibility</div>
+                  <div className="mt-2 text-lg font-semibold text-[#0b1f2a]">Better listing presence</div>
+                  <div className="mt-1 text-xs leading-6 text-black/55">Present properties inside a cleaner marketplace experience.</div>
+                </div>
+
+                <div className="rounded-2xl border border-black/10 bg-white/80 p-4 shadow-sm">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-black/45">Control</div>
+                  <div className="mt-2 text-lg font-semibold text-[#0b1f2a]">Role-based workflow</div>
+                  <div className="mt-1 text-xs leading-6 text-black/55">Keep agent access and property activity more organized.</div>
+                </div>
+
+                <div className="rounded-2xl border border-black/10 bg-white/80 p-4 shadow-sm">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-black/45">Trust</div>
+                  <div className="mt-2 text-lg font-semibold text-[#0b1f2a]">Inspection accountability</div>
+                  <div className="mt-1 text-xs leading-6 text-black/55">Operate in a flow designed to reduce confusion and noise.</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="md:col-span-5">
+              <div className="rounded-[28px] border border-black/10 bg-white/80 p-6 shadow-sm backdrop-blur">
+                <div className="text-sm font-semibold text-[#0b1f2a]">What landlords get</div>
+
+                <div className="mt-5 space-y-4">
+                  <LandingInfoCard
+                    title="Professional onboarding"
+                    body="Join Keyvera, complete your access, and move into a more serious property workflow."
+                  />
+                  <LandingInfoCard
+                    title="Structured next step"
+                    body="Once authenticated, your next clear action becomes Create Property so you can begin listing properly."
+                  />
+                  <LandingInfoCard
+                    title="Trust-first direction"
+                    body="We are shaping the platform to help landlords feel safer listing and operating within a controlled environment."
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </PageShell>
+    );
+  }
+
+  if (!authorized) {
     return null;
   }
 
@@ -753,8 +896,8 @@ export default function LandlordPropertiesPage() {
           <div className="inline-flex items-center gap-3">
             <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-[#0ea5a3] to-[#0a4f63] shadow-[0_14px_34px_rgba(10,79,99,0.22)]" />
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-[#0b1f2a] md:text-3xl">My Properties</h1>
-              <p className="mt-1 text-sm text-black/60">Manage listings, agent access, and inspection activity.</p>
+              <h1 className="text-2xl font-semibold tracking-tight text-[#0b1f2a] md:text-3xl">Landlord Dashboard</h1>
+              <p className="mt-1 text-sm text-black/60">Welcome to Keyvera. Your next step is to create and manage your property listings.</p>
             </div>
           </div>
 
@@ -801,12 +944,12 @@ export default function LandlordPropertiesPage() {
         </Card>
       ) : properties.length === 0 ? (
         <Card
-          title={<h2 className="text-lg font-semibold text-[#0b1f2a]">No properties yet</h2>}
-          subtitle="Create your first listing to start receiving inspection requests."
+          title={<h2 className="text-lg font-semibold text-[#0b1f2a]">Welcome to Keyvera</h2>}
+          subtitle="Your landlord account is ready. The next step is to create your first property."
           right={<PrimaryButton onClick={() => router.push("/landlord/properties/new")}>+ Create Property</PrimaryButton>}
         >
           <div className="rounded-2xl border border-black/10 bg-white/70 p-6 text-sm text-black/60">
-            Once your listing is approved by Admin, you can take it live.
+            Once your property is submitted and reviewed, you can begin moving through the landlord workflow.
           </div>
         </Card>
       ) : (
