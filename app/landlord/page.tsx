@@ -298,6 +298,9 @@ export default function LandlordPropertiesPage() {
   const router = useRouter();
   const pathname = usePathname();
 
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authorized, setAuthorized] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [properties, setProperties] = useState<Property[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -327,12 +330,16 @@ export default function LandlordPropertiesPage() {
   const [inspectionPropertyId, setInspectionPropertyId] = useState<string>("");
 
   async function requireLandlordUser() {
+    const redirectTo = `/login?next=${encodeURIComponent(pathname || "/landlord")}`;
+
     const { data: userData, error: userErr } = await supabase.auth.getUser();
     if (userErr) throw tagErr("auth.getUser", userErr);
 
     const user = userData.user;
     if (!user) {
-      router.replace(`/login?next=${encodeURIComponent(pathname || "/landlord")}`);
+      setAuthorized(false);
+      setAuthChecked(true);
+      router.replace(redirectTo);
       return null;
     }
 
@@ -345,11 +352,15 @@ export default function LandlordPropertiesPage() {
     if (profErr) throw tagErr("profiles.select(role)", profErr);
 
     if (!profile || profile.role !== "landlord") {
-      router.replace(`/login?next=${encodeURIComponent(pathname || "/landlord")}`);
+      setAuthorized(false);
+      setAuthChecked(true);
+      router.replace(redirectTo);
       return null;
     }
 
     setLandlordUserId(user.id);
+    setAuthorized(true);
+    setAuthChecked(true);
     return user;
   }
 
@@ -490,7 +501,9 @@ export default function LandlordPropertiesPage() {
 
     try {
       const user = await requireLandlordUser();
-      if (!user) return;
+      if (!user) {
+        return;
+      }
 
       const { data: landlordRow, error: landlordErr } = await supabase
         .from("landlords")
@@ -523,7 +536,9 @@ export default function LandlordPropertiesPage() {
       setProperties([]);
       setAuthorizations([]);
       setInspections([]);
+      setAuthorized(false);
     } finally {
+      setAuthChecked(true);
       setLoading(false);
     }
   }
@@ -538,9 +553,10 @@ export default function LandlordPropertiesPage() {
   }, []);
 
   useEffect(() => {
+    if (!authorized) return;
     loadAgents();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authorized]);
 
   const authByProperty = useMemo(() => {
     const map: Record<string, AuthorizationRow[]> = {};
@@ -739,6 +755,19 @@ export default function LandlordPropertiesPage() {
     } finally {
       setActionBusy(false);
     }
+  }
+
+  if (!authChecked || !authorized) {
+    return (
+      <PageShell>
+        <Card
+          title={<h2 className="text-lg font-semibold text-[#0b1f2a]">Redirecting</h2>}
+          subtitle="Checking your landlord access…"
+        >
+          <div className="text-sm text-black/60">Redirecting to login…</div>
+        </Card>
+      </PageShell>
+    );
   }
 
   return (

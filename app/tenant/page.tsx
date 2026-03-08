@@ -200,6 +200,9 @@ export default function TenantPortalPage() {
   const router = useRouter();
   const pathname = usePathname();
 
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authorized, setAuthorized] = useState(false);
+
   const [bootLoading, setBootLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -242,14 +245,19 @@ export default function TenantPortalPage() {
   }, [q, city, area, minRent, maxRent, type, sort]);
 
   async function requireTenantUser() {
+    const redirectTo = `/login?next=${encodeURIComponent(pathname || "/tenant")}`;
+
     const {
       data: { user },
       error: userErr,
     } = await supabase.auth.getUser();
 
     if (userErr) throw userErr;
+
     if (!user) {
-      router.replace(`/login?next=${encodeURIComponent(pathname || "/tenant")}`);
+      setAuthorized(false);
+      setAuthChecked(true);
+      router.replace(redirectTo);
       return null;
     }
 
@@ -258,11 +266,15 @@ export default function TenantPortalPage() {
     if (profErr) throw profErr;
 
     if (!profile || profile.role !== "tenant") {
-      router.replace(`/login?next=${encodeURIComponent(pathname || "/tenant")}`);
+      setAuthorized(false);
+      setAuthChecked(true);
+      router.replace(redirectTo);
       return null;
     }
 
     setTenantUserId(user.id);
+    setAuthorized(true);
+    setAuthChecked(true);
     return user;
   }
 
@@ -375,9 +387,11 @@ export default function TenantPortalPage() {
 
       setPage(1);
       await Promise.all([loadMyRequests(user.id)]);
-      setBootLoading(false);
     } catch (e: any) {
       setErrorMsg(e?.message ?? "Failed to load tenant portal.");
+      setAuthorized(false);
+    } finally {
+      setAuthChecked(true);
       setBootLoading(false);
     }
   }
@@ -393,17 +407,17 @@ export default function TenantPortalPage() {
   }, [q, city, area, minRent, maxRent, type, sort]);
 
   useEffect(() => {
-    if (bootLoading) return;
+    if (bootLoading || !authorized) return;
     loadProperties();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bootLoading, page, q, city, area, minRent, maxRent, type, sort]);
+  }, [bootLoading, authorized, page, q, city, area, minRent, maxRent, type, sort]);
 
   useEffect(() => {
-    if (bootLoading) return;
+    if (bootLoading || !authorized) return;
     const exclude = properties.map((p) => p.id);
     loadRecommendations(exclude);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bootLoading, properties]);
+  }, [bootLoading, authorized, properties]);
 
   const propertyMapAll = useMemo(() => {
     const map: Record<string, PropertyRow> = {};
@@ -490,6 +504,21 @@ export default function TenantPortalPage() {
     }
     return { total: requests.length, requested, paid, scheduled, completed };
   }, [requests]);
+
+  if (!authChecked || !authorized) {
+    return (
+      <main className="min-h-screen bg-gradient-to-b from-white via-white to-[rgba(14,165,163,0.06)]">
+        <div className="mx-auto max-w-7xl px-6 py-10">
+          <Card
+            title={<h2 className="text-lg font-semibold text-[#0b1f2a]">Redirecting</h2>}
+            subtitle="Checking your tenant access…"
+          >
+            <div className="text-sm text-black/60">Redirecting to login…</div>
+          </Card>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-white via-white to-[rgba(14,165,163,0.06)]">
@@ -621,7 +650,7 @@ export default function TenantPortalPage() {
               <label className="mb-2 block text-xs font-semibold text-black/60">Sort</label>
               <select
                 value={sort}
-                onChange={(e) => setSort(e.target.value as any)}
+                onChange={(e) => setSort(e.target.value as "newest" | "rent_low" | "rent_high")}
                 className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none focus:border-black/20"
               >
                 <option value="newest">Newest</option>
