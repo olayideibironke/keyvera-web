@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -37,7 +37,7 @@ function getMetadataRole(user: any): RoleType {
   return null;
 }
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -389,5 +389,28 @@ export default function LoginPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+function LoginPageFallback() {
+  return (
+    <main className="min-h-screen bg-gray-100">
+      <div className="mx-auto flex min-h-screen max-w-6xl items-center justify-center px-6 py-12">
+        <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-md">
+          <div className="text-center">
+            <h1 className="text-3xl font-bold text-[#0b1f2a]">Keyvera Login</h1>
+            <p className="mt-2 text-sm text-gray-600">Loading…</p>
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginPageFallback />}>
+      <LoginPageContent />
+    </Suspense>
   );
 }
