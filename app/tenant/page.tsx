@@ -202,6 +202,7 @@ export default function TenantPortalPage() {
 
   const [authChecked, setAuthChecked] = useState(false);
   const [authorized, setAuthorized] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
 
   const [bootLoading, setBootLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -244,9 +245,13 @@ export default function TenantPortalPage() {
     );
   }, [q, city, area, minRent, maxRent, type, sort]);
 
-  async function requireTenantUser() {
-    const redirectTo = `/login?next=${encodeURIComponent(pathname || "/tenant")}`;
+  function redirectToLogin() {
+    const next = encodeURIComponent(pathname || "/tenant");
+    setRedirecting(true);
+    window.location.replace(`/login?next=${next}`);
+  }
 
+  async function requireTenantUser() {
     const {
       data: { user },
       error: userErr,
@@ -257,7 +262,7 @@ export default function TenantPortalPage() {
     if (!user) {
       setAuthorized(false);
       setAuthChecked(true);
-      router.replace(redirectTo);
+      redirectToLogin();
       return null;
     }
 
@@ -268,7 +273,7 @@ export default function TenantPortalPage() {
     if (!profile || profile.role !== "tenant") {
       setAuthorized(false);
       setAuthChecked(true);
-      router.replace(redirectTo);
+      redirectToLogin();
       return null;
     }
 
@@ -505,19 +510,8 @@ export default function TenantPortalPage() {
     return { total: requests.length, requested, paid, scheduled, completed };
   }, [requests]);
 
-  if (!authChecked || !authorized) {
-    return (
-      <main className="min-h-screen bg-gradient-to-b from-white via-white to-[rgba(14,165,163,0.06)]">
-        <div className="mx-auto max-w-7xl px-6 py-10">
-          <Card
-            title={<h2 className="text-lg font-semibold text-[#0b1f2a]">Redirecting</h2>}
-            subtitle="Checking your tenant access…"
-          >
-            <div className="text-sm text-black/60">Redirecting to login…</div>
-          </Card>
-        </div>
-      </main>
-    );
+  if (redirecting || (!authChecked && !authorized) || (!authorized && authChecked)) {
+    return null;
   }
 
   return (

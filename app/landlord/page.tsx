@@ -271,24 +271,6 @@ function StatCard({
   );
 }
 
-function MiniInfoCard({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <div className="rounded-[22px] border border-black/10 bg-white/75 p-4 shadow-[0_12px_30px_rgba(11,31,42,0.05)]">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">{label}</div>
-      <div className="mt-2 text-lg font-semibold text-[#0b1f2a]">{value}</div>
-      <div className="mt-1 text-xs text-black/50">{detail}</div>
-    </div>
-  );
-}
-
 function tagErr(context: string, e: any) {
   const msg = e?.message ? String(e.message) : String(e ?? "Unknown error");
   return new Error(`[${context}] ${msg}`);
@@ -300,6 +282,7 @@ export default function LandlordPropertiesPage() {
 
   const [authChecked, setAuthChecked] = useState(false);
   const [authorized, setAuthorized] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [properties, setProperties] = useState<Property[]>([]);
@@ -329,9 +312,13 @@ export default function LandlordPropertiesPage() {
   const [inspectionsErr, setInspectionsErr] = useState<string | null>(null);
   const [inspectionPropertyId, setInspectionPropertyId] = useState<string>("");
 
-  async function requireLandlordUser() {
-    const redirectTo = `/login?next=${encodeURIComponent(pathname || "/landlord")}`;
+  function redirectToLogin() {
+    const next = encodeURIComponent(pathname || "/landlord");
+    setRedirecting(true);
+    window.location.replace(`/login?next=${next}`);
+  }
 
+  async function requireLandlordUser() {
     const { data: userData, error: userErr } = await supabase.auth.getUser();
     if (userErr) throw tagErr("auth.getUser", userErr);
 
@@ -339,7 +326,7 @@ export default function LandlordPropertiesPage() {
     if (!user) {
       setAuthorized(false);
       setAuthChecked(true);
-      router.replace(redirectTo);
+      redirectToLogin();
       return null;
     }
 
@@ -354,7 +341,7 @@ export default function LandlordPropertiesPage() {
     if (!profile || profile.role !== "landlord") {
       setAuthorized(false);
       setAuthChecked(true);
-      router.replace(redirectTo);
+      redirectToLogin();
       return null;
     }
 
@@ -501,9 +488,7 @@ export default function LandlordPropertiesPage() {
 
     try {
       const user = await requireLandlordUser();
-      if (!user) {
-        return;
-      }
+      if (!user) return;
 
       const { data: landlordRow, error: landlordErr } = await supabase
         .from("landlords")
@@ -757,17 +742,8 @@ export default function LandlordPropertiesPage() {
     }
   }
 
-  if (!authChecked || !authorized) {
-    return (
-      <PageShell>
-        <Card
-          title={<h2 className="text-lg font-semibold text-[#0b1f2a]">Redirecting</h2>}
-          subtitle="Checking your landlord access…"
-        >
-          <div className="text-sm text-black/60">Redirecting to login…</div>
-        </Card>
-      </PageShell>
-    );
+  if (redirecting || (!authChecked && !authorized) || (!authorized && authChecked)) {
+    return null;
   }
 
   return (
