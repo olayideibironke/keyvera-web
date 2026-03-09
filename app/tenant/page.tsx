@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type InspectionStatus = "requested" | "paid" | "scheduled" | "completed" | "cancelled";
@@ -36,6 +37,8 @@ type InspectionRow = {
   payment_reference?: string | null;
   paid_at?: string | null;
 };
+
+type ViewMode = "checking" | "public" | "private";
 
 function formatNgn(n: number) {
   return `₦${Number(n || 0).toLocaleString()}`;
@@ -196,19 +199,52 @@ function MetricCard({
   );
 }
 
+function LandingPrimaryLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] px-6 py-3 text-sm font-semibold text-white shadow-[0_16px_38px_rgba(10,79,99,0.28)] transition hover:shadow-[0_20px_46px_rgba(10,79,99,0.34)]"
+    >
+      {children}
+    </Link>
+  );
+}
+
+function LandingSecondaryLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex items-center justify-center rounded-2xl border border-black/10 bg-white px-6 py-3 text-sm font-semibold text-[#0b1f2a] shadow-sm transition hover:bg-black/[0.03]"
+    >
+      {children}
+    </Link>
+  );
+}
+
+function LandingInfoCard({
+  title,
+  body,
+}: {
+  title: string;
+  body: string;
+}) {
+  return (
+    <div className="rounded-[24px] border border-black/10 bg-white/80 p-5 shadow-[0_14px_34px_rgba(11,31,42,0.06)]">
+      <div className="text-lg font-semibold text-[#0b1f2a]">{title}</div>
+      <p className="mt-2 text-sm leading-7 text-black/60">{body}</p>
+    </div>
+  );
+}
+
 export default function TenantPortalPage() {
   const router = useRouter();
-  const pathname = usePathname();
 
-  const [authChecked, setAuthChecked] = useState(false);
-  const [authorized, setAuthorized] = useState(false);
-  const [redirecting, setRedirecting] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>("checking");
+  const [tenantUserId, setTenantUserId] = useState<string | null>(null);
 
   const [bootLoading, setBootLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
-
-  const [, setTenantUserId] = useState<string | null>(null);
 
   const [q, setQ] = useState("");
   const [city, setCity] = useState("");
@@ -245,42 +281,62 @@ export default function TenantPortalPage() {
     );
   }, [q, city, area, minRent, maxRent, type, sort]);
 
-  function redirectToLogin() {
-    const next = encodeURIComponent(pathname || "/tenant");
-    setRedirecting(true);
-    window.location.replace(`/login?next=${next}`);
-  }
-
-  async function requireTenantUser() {
+  async function resolveTenantAccess() {
     const {
-      data: { user },
-      error: userErr,
-    } = await supabase.auth.getUser();
+      data: { session },
+      error: sessionErr,
+    } = await supabase.auth.getSession();
 
-    if (userErr) throw userErr;
+    if (sessionErr) throw sessionErr;
 
-    if (!user) {
-      setAuthorized(false);
-      setAuthChecked(true);
-      redirectToLogin();
+    if (!session?.user) {
+      setTenantUserId(null);
+      setViewMode("public");
       return null;
     }
 
-    const { data: profile, error: profErr } = await supabase.from("profiles").select("role").eq("user_id", user.id).maybeSingle();
+    const user = session.user;
+
+    const { data: profile, error: profErr } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("user_id", user.id)
+      .maybeSingle();
 
     if (profErr) throw profErr;
 
-    if (!profile || profile.role !== "tenant") {
-      setAuthorized(false);
-      setAuthChecked(true);
-      redirectToLogin();
+    const role = String(profile?.role || "").toLowerCase();
+
+    if (role && role !== "tenant") {
+      if (role === "landlord") {
+        router.replace("/landlord");
+        return null;
+      }
+
+      if (role === "agent") {
+        router.replace("/agent");
+        return null;
+      }
+
+      if (role === "admin") {
+        router.replace("/admin");
+        return null;
+      }
+
+      setTenantUserId(null);
+      setViewMode("public");
       return null;
     }
 
-    setTenantUserId(user.id);
-    setAuthorized(true);
-    setAuthChecked(true);
-    return user;
+    if (role === "tenant") {
+      setTenantUserId(user.id);
+      setViewMode("private");
+      return user;
+    }
+
+    setTenantUserId(null);
+    setViewMode("public");
+    return null;
   }
 
   function buildPropertyQuery() {
@@ -387,22 +443,33 @@ export default function TenantPortalPage() {
     setToastMsg(null);
 
     try {
-      const user = await requireTenantUser();
-      if (!user) return;
+      const user = await resolveTenantAccess();
+
+      if (!user) {
+        setRequests([]);
+        setProperties([]);
+        setRecommendations([]);
+        setTotalCount(0);
+        return;
+      }
 
       setPage(1);
       await Promise.all([loadMyRequests(user.id)]);
     } catch (e: any) {
       setErrorMsg(e?.message ?? "Failed to load tenant portal.");
-      setAuthorized(false);
+      setTenantUserId(null);
+      setViewMode("public");
     } finally {
-      setAuthChecked(true);
       setBootLoading(false);
     }
   }
 
   useEffect(() => {
     loadAll();
+    const { data: sub } = supabase.auth.onAuthStateChange(() => {
+      loadAll();
+    });
+    return () => sub?.subscription?.unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -412,17 +479,17 @@ export default function TenantPortalPage() {
   }, [q, city, area, minRent, maxRent, type, sort]);
 
   useEffect(() => {
-    if (bootLoading || !authorized) return;
+    if (bootLoading || viewMode !== "private") return;
     loadProperties();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bootLoading, authorized, page, q, city, area, minRent, maxRent, type, sort]);
+  }, [bootLoading, viewMode, page, q, city, area, minRent, maxRent, type, sort]);
 
   useEffect(() => {
-    if (bootLoading || !authorized) return;
+    if (bootLoading || viewMode !== "private") return;
     const exclude = properties.map((p) => p.id);
     loadRecommendations(exclude);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bootLoading, authorized, properties]);
+  }, [bootLoading, viewMode, properties]);
 
   const propertyMapAll = useMemo(() => {
     const map: Record<string, PropertyRow> = {};
@@ -448,7 +515,7 @@ export default function TenantPortalPage() {
     setActionId(`req:${propertyId}`);
 
     try {
-      const user = await requireTenantUser();
+      const user = await resolveTenantAccess();
       if (!user) return;
 
       const p = propertyMapAll[propertyId] ?? null;
@@ -510,8 +577,96 @@ export default function TenantPortalPage() {
     return { total: requests.length, requested, paid, scheduled, completed };
   }, [requests]);
 
-  if (redirecting || (!authChecked && !authorized) || (!authorized && authChecked)) {
+  if (viewMode === "checking") {
     return null;
+  }
+
+  if (viewMode === "public") {
+    return (
+      <main className="min-h-screen bg-gradient-to-b from-white via-white to-[rgba(14,165,163,0.06)]">
+        <div className="mx-auto max-w-7xl px-6 py-10">
+          <section className="relative overflow-hidden rounded-[34px] border border-black/10 bg-white shadow-[0_16px_46px_rgba(11,31,42,0.10)]">
+            <div
+              className="pointer-events-none absolute inset-0"
+              style={{
+                background:
+                  "radial-gradient(820px 360px at 12% 0%, rgba(14,165,163,0.16), rgba(255,255,255,0) 60%), radial-gradient(700px 320px at 88% 0%, rgba(11,31,42,0.10), rgba(255,255,255,0) 58%)",
+              }}
+            />
+
+            <div className="relative grid gap-8 p-8 md:grid-cols-12 md:p-10">
+              <div className="md:col-span-7">
+                <div className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/80 px-4 py-2 text-xs font-semibold text-[#0b1f2a] shadow-sm">
+                  <span className="h-2 w-2 rounded-full bg-[#0ea5a3]" style={{ opacity: 0.75 }} />
+                  Welcome to Keyvera for Tenants
+                </div>
+
+                <h1 className="mt-5 text-4xl font-extrabold leading-tight tracking-tight text-[#0b1f2a] md:text-5xl">
+                  Discover verified homes and rent with more confidence on Keyvera.
+                </h1>
+
+                <p className="mt-5 max-w-2xl text-base leading-8 text-black/65">
+                  Browse validated listings, understand inspection fees clearly, and move through a more professional rental
+                  workflow designed to reduce confusion and improve trust.
+                </p>
+
+                <div className="mt-8 flex flex-wrap gap-3">
+                  <LandingPrimaryLink href="/login?next=/tenant">Sign In</LandingPrimaryLink>
+                  <LandingSecondaryLink href="/login?next=/tenant&mode=signup">Sign Up</LandingSecondaryLink>
+                </div>
+
+                <div className="mt-8 grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-2xl border border-black/10 bg-white/80 p-4 shadow-sm">
+                    <div className="text-xs font-semibold uppercase tracking-[0.14em] text-black/45">Listings</div>
+                    <div className="mt-2 text-lg font-semibold text-[#0b1f2a]">Verified visibility</div>
+                    <div className="mt-1 text-xs leading-6 text-black/55">
+                      Browse rental options with clearer signals around status and inspection readiness.
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-black/10 bg-white/80 p-4 shadow-sm">
+                    <div className="text-xs font-semibold uppercase tracking-[0.14em] text-black/45">Inspections</div>
+                    <div className="mt-2 text-lg font-semibold text-[#0b1f2a]">Transparent next steps</div>
+                    <div className="mt-1 text-xs leading-6 text-black/55">
+                      Request inspections with more structured fee handling and cleaner progress tracking.
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-black/10 bg-white/80 p-4 shadow-sm">
+                    <div className="text-xs font-semibold uppercase tracking-[0.14em] text-black/45">Trust</div>
+                    <div className="mt-2 text-lg font-semibold text-[#0b1f2a]">Safer marketplace feel</div>
+                    <div className="mt-1 text-xs leading-6 text-black/55">
+                      Move through a platform built around verification, accountability, and reduced rental noise.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="md:col-span-5">
+                <div className="rounded-[28px] border border-black/10 bg-white/80 p-6 shadow-sm backdrop-blur">
+                  <div className="text-sm font-semibold text-[#0b1f2a]">What tenants get</div>
+
+                  <div className="mt-5 space-y-4">
+                    <LandingInfoCard
+                      title="Professional sign in and onboarding"
+                      body="Create your tenant account and access a cleaner rental browsing and inspection workflow."
+                    />
+                    <LandingInfoCard
+                      title="Search with stronger signals"
+                      body="Browse live listings with inspection fee readiness, property type, area, city, and pricing filters."
+                    />
+                    <LandingInfoCard
+                      title="Track your inspection journey"
+                      body="See requested, paid, scheduled, and completed inspections from one tenant dashboard."
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -756,7 +911,7 @@ export default function TenantPortalPage() {
                     onClick={async () => {
                       setErrorMsg(null);
                       setToastMsg(null);
-                      const user = await requireTenantUser();
+                      const user = await resolveTenantAccess();
                       if (!user) return;
                       await loadMyRequests(user.id);
                     }}
