@@ -276,27 +276,9 @@ export default function TenantInspectionsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function markPaid(id: string) {
-    setError(null);
+  function openInspection(id: string) {
     setActionId(id);
-
-    try {
-      const user = await requireUser();
-      if (!user) return;
-
-      const { error: rpcErr } = await supabase.rpc("tenant_mark_inspection_paid", {
-        p_inspection_id: id,
-        p_payment_reference: null,
-      });
-
-      if (rpcErr) throw rpcErr;
-
-      await load();
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to mark paid.");
-    } finally {
-      setActionId(null);
-    }
+    router.push(`/tenant/inspections/${id}`);
   }
 
   return (
@@ -387,18 +369,20 @@ export default function TenantInspectionsPage() {
                             <td className="px-5 py-5 text-right">
                               <div className="flex flex-wrap justify-end gap-2">
                                 {r.status === "requested" ? (
-                                  <PrimaryButton onClick={() => markPaid(r.id)} disabled={busy} className="px-4 py-2.5 text-xs">
-                                    {busy ? "Working..." : "Mark Paid"}
+                                  <PrimaryButton onClick={() => openInspection(r.id)} disabled={busy} className="px-4 py-2.5 text-xs">
+                                    {busy ? "Opening..." : "Pay Now"}
                                   </PrimaryButton>
                                 ) : null}
 
-                                <GhostButton
-                                  onClick={() => router.push(`/tenant/inspections/${r.id}`)}
-                                  disabled={busy}
-                                  className="px-4 py-2.5 text-xs"
-                                >
-                                  View
-                                </GhostButton>
+                                {r.status !== "requested" ? (
+                                  <GhostButton
+                                    onClick={() => openInspection(r.id)}
+                                    disabled={busy}
+                                    className="px-4 py-2.5 text-xs"
+                                  >
+                                    {busy ? "Opening..." : "View"}
+                                  </GhostButton>
+                                ) : null}
                               </div>
                             </td>
                           </tr>
@@ -450,14 +434,14 @@ export default function TenantInspectionsPage() {
 
                     <div className="mt-5 flex flex-wrap gap-2">
                       {r.status === "requested" ? (
-                        <PrimaryButton onClick={() => markPaid(r.id)} disabled={busy} className="px-4 py-3 text-xs">
-                          {busy ? "Working..." : "Mark Paid"}
+                        <PrimaryButton onClick={() => openInspection(r.id)} disabled={busy} className="px-4 py-3 text-xs">
+                          {busy ? "Opening..." : "Pay Now"}
                         </PrimaryButton>
-                      ) : null}
-
-                      <GhostButton onClick={() => router.push(`/tenant/inspections/${r.id}`)} disabled={busy} className="px-4 py-3 text-xs">
-                        View
-                      </GhostButton>
+                      ) : (
+                        <GhostButton onClick={() => openInspection(r.id)} disabled={busy} className="px-4 py-3 text-xs">
+                          {busy ? "Opening..." : "View"}
+                        </GhostButton>
+                      )}
                     </div>
                   </article>
                 );
