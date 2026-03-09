@@ -1,4 +1,5 @@
 // app/page.tsx
+import Image from "next/image";
 import Link from "next/link";
 import RoleRedirectGate from "@/app/ui/role-redirect-gate";
 
@@ -11,7 +12,7 @@ type ShowcaseCardProps = {
   location: string;
   price: string;
   tag: string;
-  accent?: "teal" | "navy";
+  imageSrc: string;
 };
 
 function Pill({ children }: { children: React.ReactNode }) {
@@ -112,7 +113,7 @@ function InfoCard({
   const dot = accent === "navy" ? BRAND_NAVY : BRAND_TEAL;
 
   return (
-    <div className={`rounded-[28px] border border-black/10 bg-white p-6 shadow-sm`}>
+    <div className="rounded-[28px] border border-black/10 bg-white p-6 shadow-sm">
       <div className={`h-20 rounded-[22px] bg-gradient-to-br ${grad}`} />
       <div className="mt-5 flex items-center gap-2">
         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dot, opacity: 0.7 }} />
@@ -143,23 +144,12 @@ function StepCard({
   );
 }
 
-function ShowcaseCard({
-  title,
-  location,
-  price,
-  tag,
-  accent = "teal",
-}: ShowcaseCardProps) {
-  const imageBg =
-    accent === "navy"
-      ? "linear-gradient(135deg, rgba(11,31,42,0.92), rgba(11,31,42,0.52), rgba(255,255,255,0.10))"
-      : "linear-gradient(135deg, rgba(14,165,163,0.92), rgba(10,79,99,0.68), rgba(255,255,255,0.16))";
-
+function ShowcaseCard({ title, location, price, tag, imageSrc }: ShowcaseCardProps) {
   return (
     <div className="overflow-hidden rounded-[28px] border border-black/10 bg-white shadow-sm">
       <div className="relative h-56 overflow-hidden">
-        <div className="absolute inset-0" style={{ background: imageBg }} />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.30),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.18),transparent_28%)]" />
+        <Image src={imageSrc} alt={title} fill className="object-cover" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(11,31,42,0.10)_0%,rgba(11,31,42,0.18)_35%,rgba(11,31,42,0.72)_100%)]" />
         <div className="absolute left-5 top-5 rounded-full border border-white/30 bg-white/20 px-3 py-1 text-[11px] font-semibold text-white backdrop-blur">
           {tag}
         </div>
@@ -202,14 +192,14 @@ export default function HomePage() {
 
         <div className="relative grid gap-10 p-8 md:grid-cols-12 md:p-10 lg:p-12">
           <div className="md:col-span-7">
-            <Pill>Nigeria-focused verified property marketplace</Pill>
+            <Pill>Lagos-focused verified property marketplace</Pill>
 
             <h1 className="mt-5 max-w-4xl text-4xl font-extrabold leading-tight tracking-tight text-slate-950 md:text-5xl">
-              Beautiful homes. Verified listings. Safer renting for tenants, landlords, and agents.
+              Beautiful Lagos homes. Verified listings. A safer rental experience for tenants, landlords, and agents.
             </h1>
 
             <p className="mt-5 max-w-2xl text-base leading-8 text-slate-700">
-              Keyvera is building a more professional rental experience with verified roles, structured inspections,
+              Keyvera is building a more professional rental experience in Lagos with verified roles, structured inspections,
               transparent fees, and trust-first workflows that help reduce confusion and fraud.
             </p>
 
@@ -222,7 +212,7 @@ export default function HomePage() {
               <div className="rounded-2xl border border-black/10 bg-white/75 p-4 shadow-sm">
                 <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Marketplace</div>
                 <div className="mt-2 text-lg font-bold text-slate-950">Verified workflows</div>
-                <div className="mt-1 text-xs leading-6 text-slate-600">Built for real rental operations, not guesswork.</div>
+                <div className="mt-1 text-xs leading-6 text-slate-600">Built for real Lagos rental operations, not guesswork.</div>
               </div>
 
               <div className="rounded-2xl border border-black/10 bg-white/75 p-4 shadow-sm">
@@ -240,48 +230,59 @@ export default function HomePage() {
           </div>
 
           <div className="md:col-span-5">
-            <div className="rounded-[30px] border border-black/10 bg-white/75 p-5 shadow-sm backdrop-blur">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-bold text-slate-950">Explore Keyvera</div>
-                  <div className="mt-1 text-xs text-slate-600">Choose how you want to enter the marketplace.</div>
+            <div className="overflow-hidden rounded-[30px] border border-black/10 bg-white/75 shadow-sm backdrop-blur">
+              <div className="relative h-[240px]">
+                <Image
+                  src="/home/hero-lagos.jpg"
+                  alt="Premium Lagos property"
+                  fill
+                  className="object-cover"
+                />
+                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(11,31,42,0.14)_0%,rgba(11,31,42,0.18)_35%,rgba(11,31,42,0.70)_100%)]" />
+                <div className="absolute left-5 top-5 rounded-full border border-white/25 bg-white/20 px-3 py-1 text-[11px] font-semibold text-white backdrop-blur">
+                  Lagos Market
                 </div>
-                <div className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700">
-                  Public Access
+                <div className="absolute bottom-5 left-5 right-5">
+                  <div className="text-xl font-bold text-white">Explore Keyvera</div>
+                  <div className="mt-1 max-w-md text-sm leading-6 text-white/85">
+                    Enter a cleaner property marketplace built for trust, presentation, and structure.
+                  </div>
                 </div>
               </div>
 
-              <div className="mt-5 grid gap-3">
-                <RoleButton
-                  href="/tenant"
-                  label="Tenant"
-                  desc="Browse listings, request inspections, and manage payment workflow."
-                  accent="teal"
-                />
-                <RoleButton
-                  href="/landlord"
-                  label="Landlord"
-                  desc="Join Keyvera, access your dashboard, and manage listing activity."
-                  accent="navy"
-                />
-                <RoleButton
-                  href="/agent"
-                  label="Agent"
-                  desc="Get verified, access scheduling workflows, and support inspections."
-                  accent="teal"
-                />
-                <RoleButton
-                  href="/admin"
-                  label="Admin"
-                  desc="Internal portal for platform operations, approvals, and control."
-                  accent="navy"
-                />
-              </div>
+              <div className="p-5">
+                <div className="grid gap-3">
+                  <RoleButton
+                    href="/tenant"
+                    label="Tenant"
+                    desc="Browse listings, request inspections, and manage payment workflow."
+                    accent="teal"
+                  />
+                  <RoleButton
+                    href="/landlord"
+                    label="Landlord"
+                    desc="Join Keyvera, access your dashboard, and manage listing activity."
+                    accent="navy"
+                  />
+                  <RoleButton
+                    href="/agent"
+                    label="Agent"
+                    desc="Get verified, access scheduling workflows, and support inspections."
+                    accent="teal"
+                  />
+                  <RoleButton
+                    href="/admin"
+                    label="Admin"
+                    desc="Internal portal for platform operations, approvals, and control."
+                    accent="navy"
+                  />
+                </div>
 
-              <div className="mt-5 rounded-[24px] border border-black/10 bg-slate-50 p-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Why Keyvera</div>
-                <div className="mt-2 text-sm leading-7 text-slate-700">
-                  A more serious, secure, and transparent property workflow for Nigerian rentals.
+                <div className="mt-5 rounded-[24px] border border-black/10 bg-slate-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Why Keyvera</div>
+                  <div className="mt-2 text-sm leading-7 text-slate-700">
+                    A more serious, secure, and transparent Lagos property workflow.
+                  </div>
                 </div>
               </div>
             </div>
@@ -292,8 +293,8 @@ export default function HomePage() {
       <section className="space-y-6">
         <SectionTitle
           eyebrow="Featured marketplace feel"
-          title="A premium front door for discovering properties."
-          body="This homepage sets the tone for trust, quality, and credibility. For now, we are using premium branded showcase cards. Later, we can swap these with real Nigerian property imagery and live featured listings."
+          title="A premium front door for discovering Lagos properties."
+          body="This homepage sets the tone for trust, quality, and credibility. We are now using real premium-style Lagos property imagery to make the platform feel more serious from first touch."
         />
 
         <div className="grid gap-5 md:grid-cols-3">
@@ -302,21 +303,21 @@ export default function HomePage() {
             location="Lekki Phase 1, Lagos"
             price="₦8,500,000 / year"
             tag="Verified Listing Feel"
-            accent="teal"
+            imageSrc="/home/lagos-card-1.jpg"
           />
           <ShowcaseCard
             title="Luxury family home with premium compound"
             location="Ikoyi, Lagos"
             price="₦18,000,000 / year"
             tag="Professional Presentation"
-            accent="navy"
+            imageSrc="/home/lagos-card-3.jpg"
           />
           <ShowcaseCard
             title="Contemporary apartment for young professionals"
-            location="Abuja Municipal, FCT"
+            location="Victoria Island, Lagos"
             price="₦5,200,000 / year"
             tag="Inspection Ready"
-            accent="teal"
+            imageSrc="/home/lagos-card-2.jpg"
           />
         </div>
       </section>
@@ -342,7 +343,7 @@ export default function HomePage() {
       <section className="space-y-6 rounded-[34px] border border-black/10 bg-white p-8 shadow-sm md:p-10">
         <SectionTitle
           eyebrow="How it works"
-          title="A smoother rental flow built around trust and structure."
+          title="A smoother Lagos rental flow built around trust and structure."
           body="Keyvera is designed to feel modern and professional from the first touchpoint. The goal is simple: cleaner listings, clearer expectations, and a better experience for everyone involved."
         />
 
@@ -369,7 +370,7 @@ export default function HomePage() {
         <div className="rounded-[34px] border border-black/10 bg-white p-8 shadow-sm">
           <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Why landlords should trust us</div>
           <h3 className="mt-3 text-2xl font-extrabold tracking-tight text-slate-950">
-            A safer, more professional place to present your properties.
+            A safer, more professional place to present your Lagos properties.
           </h3>
           <p className="mt-4 text-sm leading-8 text-slate-600">
             Keyvera aims to help landlords feel protected by creating more structure around who can access workflows,
@@ -392,7 +393,7 @@ export default function HomePage() {
         <div className="rounded-[34px] border border-black/10 bg-white p-8 shadow-sm">
           <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Why tenants should trust us</div>
           <h3 className="mt-3 text-2xl font-extrabold tracking-tight text-slate-950">
-            A rental experience that feels more secure, transparent, and intentional.
+            A Lagos rental experience that feels more secure, transparent, and intentional.
           </h3>
           <p className="mt-4 text-sm leading-8 text-slate-600">
             Tenants should feel like they are walking into a serious platform, not a random listing board. Keyvera is
@@ -421,8 +422,7 @@ export default function HomePage() {
               Start with the role that fits you best.
             </h3>
             <p className="mt-3 text-sm leading-8 text-slate-600">
-              We’ll next clean the landlord, agent, and tenant entry pages so each one becomes a proper sign in / sign
-              up landing experience instead of exposing dashboard controls too early.
+              Keyvera is now structured so each role enters through a cleaner public landing before accessing its private workflow.
             </p>
           </div>
 
