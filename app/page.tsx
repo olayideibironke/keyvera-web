@@ -100,25 +100,51 @@ function InfoCard({
   title,
   body,
   accent = "teal",
+  bannerEyebrow,
+  bannerTitle,
+  bannerBody,
 }: {
   title: string;
   body: string;
   accent?: "teal" | "navy";
+  bannerEyebrow: string;
+  bannerTitle: string;
+  bannerBody: string;
 }) {
-  const grad =
-    accent === "navy"
-      ? "from-[rgba(11,31,42,0.10)] to-transparent"
-      : "from-[rgba(14,165,163,0.12)] to-transparent";
+  const isNavy = accent === "navy";
 
-  const dot = accent === "navy" ? BRAND_NAVY : BRAND_TEAL;
+  const shellBg = isNavy
+    ? "bg-[linear-gradient(135deg,rgba(11,31,42,0.08),rgba(11,31,42,0.03),rgba(255,255,255,0.96))]"
+    : "bg-[linear-gradient(135deg,rgba(14,165,163,0.10),rgba(14,165,163,0.04),rgba(255,255,255,0.96))]";
+
+  const iconBg = isNavy
+    ? "bg-[linear-gradient(135deg,#0b1f2a,#163445)]"
+    : "bg-[linear-gradient(135deg,#0ea5a3,#0a4f63)]";
+
+  const eyebrowCls = isNavy ? "text-slate-600" : "text-[#0a4f63]";
+  const dot = isNavy ? BRAND_NAVY : BRAND_TEAL;
 
   return (
     <div className="rounded-[28px] border border-black/10 bg-white p-6 shadow-sm">
-      <div className={`h-20 rounded-[22px] bg-gradient-to-br ${grad}`} />
+      <div className={`rounded-[22px] border border-black/10 p-4 ${shellBg}`}>
+        <div className="flex items-start gap-4">
+          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white shadow-sm ${iconBg}`}>
+            <span className="text-sm font-bold">K</span>
+          </div>
+
+          <div className="min-w-0">
+            <div className={`text-[11px] font-bold uppercase tracking-[0.16em] ${eyebrowCls}`}>{bannerEyebrow}</div>
+            <div className="mt-1 text-sm font-bold text-slate-950">{bannerTitle}</div>
+            <p className="mt-1 text-xs leading-6 text-slate-600">{bannerBody}</p>
+          </div>
+        </div>
+      </div>
+
       <div className="mt-5 flex items-center gap-2">
         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: dot, opacity: 0.7 }} />
         <div className="text-lg font-bold text-slate-950">{title}</div>
       </div>
+
       <p className="mt-3 text-sm leading-7 text-slate-600">{body}</p>
     </div>
   );
@@ -327,16 +353,25 @@ export default function HomePage() {
           title="For tenants"
           body="Browse with more clarity, understand inspection expectations, and deal with a platform that is built to feel safer and more accountable."
           accent="teal"
+          bannerEyebrow="Verified access"
+          bannerTitle="Search with stronger trust signals"
+          bannerBody="Explore listings inside a cleaner marketplace flow built to feel more credible from the start."
         />
         <InfoCard
           title="For landlords"
           body="Present properties more professionally, onboard into a structured workflow, and gain better control over listing access and property handling."
           accent="navy"
+          bannerEyebrow="Listing control"
+          bannerTitle="Present homes more professionally"
+          bannerBody="Use a structured landlord workflow that improves visibility, control, and marketplace confidence."
         />
         <InfoCard
           title="For agents"
           body="Operate inside a clearer system with verification-first expectations, cleaner responsibilities, and more trustworthy marketplace participation."
           accent="teal"
+          bannerEyebrow="Inspection flow"
+          bannerTitle="Work inside a cleaner queue"
+          bannerBody="Verified agent participation helps inspections, scheduling, and completion feel more organized."
         />
       </section>
 
