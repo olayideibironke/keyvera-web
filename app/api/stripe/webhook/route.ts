@@ -4,34 +4,6 @@ import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import Stripe from "stripe";
 
-const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const resendApiKey = process.env.RESEND_API_KEY;
-const resendFromEmail = process.env.RESEND_FROM_EMAIL || "Keyvera <no-reply@send.keyvera.org>";
-
-if (!stripeSecretKey) {
-  throw new Error("Missing environment variable: STRIPE_SECRET_KEY");
-}
-if (!stripeWebhookSecret) {
-  throw new Error("Missing environment variable: STRIPE_WEBHOOK_SECRET");
-}
-if (!supabaseUrl) {
-  throw new Error("Missing environment variable: NEXT_PUBLIC_SUPABASE_URL");
-}
-if (!supabaseServiceRoleKey) {
-  throw new Error("Missing environment variable: SUPABASE_SERVICE_ROLE_KEY");
-}
-if (!resendApiKey) {
-  throw new Error("Missing environment variable: RESEND_API_KEY");
-}
-
-const stripe = new Stripe(stripeSecretKey);
-const resend = new Resend(resendApiKey);
-const admin = createClient(supabaseUrl, supabaseServiceRoleKey);
-const webhookSecret: string = stripeWebhookSecret;
-
 function cleanLocation(area?: string | null, city?: string | null, state?: string | null) {
   const values = [area, city, state]
     .map((x) => String(x ?? "").trim())
@@ -47,7 +19,43 @@ function cleanLocation(area?: string | null, city?: string | null, state?: strin
   return deduped.join(", ") || "Lagos";
 }
 
+function getRequiredEnv() {
+  const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+  const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const resendApiKey = process.env.RESEND_API_KEY;
+  const resendFromEmail = process.env.RESEND_FROM_EMAIL || "Keyvera <no-reply@send.keyvera.org>";
+
+  if (!stripeSecretKey) {
+    throw new Error("Missing environment variable: STRIPE_SECRET_KEY");
+  }
+  if (!stripeWebhookSecret) {
+    throw new Error("Missing environment variable: STRIPE_WEBHOOK_SECRET");
+  }
+  if (!supabaseUrl) {
+    throw new Error("Missing environment variable: NEXT_PUBLIC_SUPABASE_URL");
+  }
+  if (!supabaseServiceRoleKey) {
+    throw new Error("Missing environment variable: SUPABASE_SERVICE_ROLE_KEY");
+  }
+  if (!resendApiKey) {
+    throw new Error("Missing environment variable: RESEND_API_KEY");
+  }
+
+  return {
+    stripeSecretKey,
+    stripeWebhookSecret,
+    supabaseUrl,
+    supabaseServiceRoleKey,
+    resendApiKey,
+    resendFromEmail,
+  };
+}
+
 async function sendPaymentConfirmationEmail(params: {
+  resend: Resend;
+  from: string;
   to: string;
   fullName: string | null;
   propertyTitle: string;
@@ -55,12 +63,12 @@ async function sendPaymentConfirmationEmail(params: {
   amountNgn: number;
   inspectionId: string;
 }) {
-  const { to, fullName, propertyTitle, location, amountNgn, inspectionId } = params;
+  const { resend, from, to, fullName, propertyTitle, location, amountNgn, inspectionId } = params;
 
   const greeting = fullName?.trim() ? fullName.trim() : "there";
 
   await resend.emails.send({
-    from: resendFromEmail,
+    from,
     to,
     subject: "Payment confirmation - Keyvera inspection",
     html: `
@@ -83,6 +91,19 @@ async function sendPaymentConfirmationEmail(params: {
 
 export async function POST(req: Request) {
   try {
+    const {
+      stripeSecretKey,
+      stripeWebhookSecret,
+      supabaseUrl,
+      supabaseServiceRoleKey,
+      resendApiKey,
+      resendFromEmail,
+    } = getRequiredEnv();
+
+    const stripe = new Stripe(stripeSecretKey);
+    const resend = new Resend(resendApiKey);
+    const admin = createClient(supabaseUrl, supabaseServiceRoleKey);
+
     const body = await req.text();
     const headerList = await headers();
     const signature = headerList.get("stripe-signature");
@@ -91,7 +112,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing Stripe signature." }, { status: 400 });
     }
 
-    const event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
+    const event = stripe.webhooks.constructEvent(body, signature, stripeWebhookSecret);
 
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
@@ -143,6 +164,8 @@ export async function POST(req: Request) {
 
           if (tenantEmail) {
             await sendPaymentConfirmationEmail({
+              resend,
+              from: resendFromEmail,
               to: tenantEmail,
               fullName: (profile?.full_name as string | null) ?? null,
               propertyTitle: String(property?.title || "Inspection Request"),
