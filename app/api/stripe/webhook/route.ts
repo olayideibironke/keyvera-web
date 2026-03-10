@@ -1,79 +1,156 @@
-import { NextRequest, NextResponse } from "next/server";
-import Stripe from "stripe";
+import { headers } from "next/headers";
+import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { Resend } from "resend";
+import Stripe from "stripe";
 
-function getRequiredEnv(name: string) {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing environment variable: ${name}`);
-  }
-  return value;
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const resendApiKey = process.env.RESEND_API_KEY;
+const resendFromEmail = process.env.RESEND_FROM_EMAIL || "Keyvera <no-reply@send.keyvera.org>";
+
+if (!stripeSecretKey) {
+  throw new Error("Missing environment variable: STRIPE_SECRET_KEY");
+}
+if (!stripeWebhookSecret) {
+  throw new Error("Missing environment variable: STRIPE_WEBHOOK_SECRET");
+}
+if (!supabaseUrl) {
+  throw new Error("Missing environment variable: NEXT_PUBLIC_SUPABASE_URL");
+}
+if (!supabaseServiceRoleKey) {
+  throw new Error("Missing environment variable: SUPABASE_SERVICE_ROLE_KEY");
+}
+if (!resendApiKey) {
+  throw new Error("Missing environment variable: RESEND_API_KEY");
 }
 
-export async function POST(req: NextRequest) {
+const stripe = new Stripe(stripeSecretKey);
+const resend = new Resend(resendApiKey);
+const admin = createClient(supabaseUrl, supabaseServiceRoleKey);
+
+function cleanLocation(area?: string | null, city?: string | null, state?: string | null) {
+  const values = [area, city, state]
+    .map((x) => String(x ?? "").trim())
+    .filter(Boolean);
+
+  const deduped: string[] = [];
+  for (const value of values) {
+    if (!deduped.some((x) => x.toLowerCase() === value.toLowerCase())) {
+      deduped.push(value);
+    }
+  }
+
+  return deduped.join(", ") || "Lagos";
+}
+
+async function sendPaymentConfirmationEmail(params: {
+  to: string;
+  fullName: string | null;
+  propertyTitle: string;
+  location: string;
+  amountNgn: number;
+  inspectionId: string;
+}) {
+  const { to, fullName, propertyTitle, location, amountNgn, inspectionId } = params;
+
+  const greeting = fullName?.trim() ? fullName.trim() : "there";
+
+  await resend.emails.send({
+    from: resendFromEmail,
+    to,
+    subject: "Payment confirmation - Keyvera inspection",
+    html: `
+      <div style="font-family: Arial, sans-serif; color: #0b1f2a; line-height: 1.6;">
+        <h2 style="margin-bottom: 8px;">Payment successful</h2>
+        <p>Hello ${greeting},</p>
+        <p>Your inspection payment has been received successfully on Keyvera.</p>
+        <div style="margin: 20px 0; padding: 16px; border: 1px solid #e5e7eb; border-radius: 12px; background: #f8fafc;">
+          <p style="margin: 0 0 8px;"><strong>Property:</strong> ${propertyTitle}</p>
+          <p style="margin: 0 0 8px;"><strong>Location:</strong> ${location}</p>
+          <p style="margin: 0 0 8px;"><strong>Inspection fee:</strong> ₦${Number(amountNgn || 0).toLocaleString()}</p>
+          <p style="margin: 0;"><strong>Inspection ID:</strong> ${inspectionId}</p>
+        </div>
+        <p>Your request will now move to the next stage for scheduling.</p>
+        <p>Thank you,<br />Keyvera</p>
+      </div>
+    `,
+  });
+}
+
+export async function POST(req: Request) {
   try {
-    const stripeSecretKey = getRequiredEnv("STRIPE_SECRET_KEY");
-    const stripeWebhookSecret = getRequiredEnv("STRIPE_WEBHOOK_SECRET");
-    const supabaseUrl = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL");
-    const supabaseServiceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
+    const body = await req.text();
+    const headerList = await headers();
+    const signature = headerList.get("stripe-signature");
 
-    const stripe = new Stripe(stripeSecretKey);
-    const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
-
-    const signature = req.headers.get("stripe-signature");
     if (!signature) {
-      return NextResponse.json({ error: "Missing Stripe signature header." }, { status: 400 });
+      return NextResponse.json({ error: "Missing Stripe signature." }, { status: 400 });
     }
 
-    const rawBody = await req.text();
-    const event = stripe.webhooks.constructEvent(rawBody, signature, stripeWebhookSecret);
+    const event = stripe.webhooks.constructEvent(body, signature, stripeWebhookSecret);
 
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
+      const inspectionRequestId = String(session.metadata?.inspectionRequestId || "").trim();
 
-      const inspectionRequestId = String(session.metadata?.inspection_request_id || "").trim();
-      if (!inspectionRequestId) {
-        return NextResponse.json({ received: true, skipped: "Missing inspection_request_id metadata." });
-      }
+      if (inspectionRequestId) {
+        const { data: existingInspection, error: inspectionReadError } = await admin
+          .from("inspection_requests")
+          .select("id, property_id, tenant_user_id, status, inspection_fee_ngn")
+          .eq("id", inspectionRequestId)
+          .maybeSingle();
 
-      if (session.payment_status !== "paid") {
-        return NextResponse.json({ received: true, skipped: "Checkout session not marked paid." });
-      }
+        if (inspectionReadError) {
+          throw new Error(inspectionReadError.message);
+        }
 
-      const paymentReference =
-        typeof session.payment_intent === "string" && session.payment_intent
-          ? session.payment_intent
-          : session.id;
+        if (existingInspection && existingInspection.status === "requested") {
+          const paymentReference =
+            String(session.payment_intent || "").trim() || String(session.id || "").trim() || null;
 
-      const { data: existing, error: fetchError } = await supabase
-        .from("inspection_requests")
-        .select("id,status")
-        .eq("id", inspectionRequestId)
-        .maybeSingle();
+          const { error: updateError } = await admin
+            .from("inspection_requests")
+            .update({
+              status: "paid",
+              paid_at: new Date().toISOString(),
+              payment_reference: paymentReference,
+            })
+            .eq("id", existingInspection.id);
 
-      if (fetchError) {
-        return NextResponse.json({ error: fetchError.message }, { status: 500 });
-      }
+          if (updateError) {
+            throw new Error(updateError.message);
+          }
 
-      if (!existing) {
-        return NextResponse.json({ received: true, skipped: "Inspection request not found." });
-      }
+          const [{ data: property }, { data: profile }, { data: authUser }] = await Promise.all([
+            admin
+              .from("properties")
+              .select("title, area, city, state")
+              .eq("id", existingInspection.property_id)
+              .maybeSingle(),
+            admin
+              .from("profiles")
+              .select("full_name")
+              .eq("user_id", existingInspection.tenant_user_id)
+              .maybeSingle(),
+            admin.auth.admin.getUserById(existingInspection.tenant_user_id),
+          ]);
 
-      if (existing.status === "paid" || existing.status === "scheduled" || existing.status === "completed") {
-        return NextResponse.json({ received: true, ok: true, already_processed: true });
-      }
+          const tenantEmail = authUser?.user?.email || null;
 
-      const { error: updateError } = await supabase
-        .from("inspection_requests")
-        .update({
-          status: "paid",
-          paid_at: new Date().toISOString(),
-          payment_reference: paymentReference,
-        })
-        .eq("id", inspectionRequestId);
-
-      if (updateError) {
-        return NextResponse.json({ error: updateError.message }, { status: 500 });
+          if (tenantEmail) {
+            await sendPaymentConfirmationEmail({
+              to: tenantEmail,
+              fullName: (profile?.full_name as string | null) ?? null,
+              propertyTitle: String(property?.title || "Inspection Request"),
+              location: cleanLocation(property?.area, property?.city, property?.state),
+              amountNgn: Number(existingInspection.inspection_fee_ngn || 0),
+              inspectionId: existingInspection.id,
+            });
+          }
+        }
       }
     }
 

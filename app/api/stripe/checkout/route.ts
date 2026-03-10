@@ -1,133 +1,121 @@
 import { NextRequest, NextResponse } from "next/server";
-import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
+import Stripe from "stripe";
 
-type RequestBody = {
-  inspectionRequestId?: string;
-};
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-function getRequiredEnv(name: string) {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing environment variable: ${name}`);
-  }
-  return value;
+if (!stripeSecretKey) {
+  throw new Error("Missing environment variable: STRIPE_SECRET_KEY");
+}
+if (!supabaseUrl) {
+  throw new Error("Missing environment variable: NEXT_PUBLIC_SUPABASE_URL");
+}
+if (!supabaseServiceRoleKey) {
+  throw new Error("Missing environment variable: SUPABASE_SERVICE_ROLE_KEY");
 }
 
+const stripe = new Stripe(stripeSecretKey);
+const admin = createClient(supabaseUrl, supabaseServiceRoleKey);
+
 function getBaseUrl(req: NextRequest) {
-  const envUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (envUrl) return envUrl.replace(/\/+$/, "");
-
-  const origin = req.headers.get("origin")?.trim();
-  if (origin) return origin.replace(/\/+$/, "");
-
-  return "http://localhost:3000";
+  const origin = req.headers.get("origin");
+  if (origin) return origin;
+  return process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const stripeSecretKey = getRequiredEnv("STRIPE_SECRET_KEY");
-    const supabaseUrl = getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL");
-    const supabaseServiceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
+    const authHeader = req.headers.get("authorization") || "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
 
-    const stripe = new Stripe(stripeSecretKey);
-    const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
-
-    const body = (await req.json()) as RequestBody;
-    const inspectionRequestId = String(body?.inspectionRequestId || "").trim();
-
-    if (!inspectionRequestId) {
-      return NextResponse.json({ error: "Missing inspectionRequestId." }, { status: 400 });
-    }
-
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Missing authorization token." }, { status: 401 });
-    }
-
-    const accessToken = authHeader.replace("Bearer ", "").trim();
-    if (!accessToken) {
-      return NextResponse.json({ error: "Invalid authorization token." }, { status: 401 });
+    if (!token) {
+      return NextResponse.json({ error: "Missing bearer token." }, { status: 401 });
     }
 
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser(accessToken);
+    } = await admin.auth.getUser(token);
 
     if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized tenant session." }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
-    const { data: inspection, error: inspectionError } = await supabase
+    const body = await req.json();
+    const inspectionRequestId = String(body?.inspectionRequestId || "").trim();
+
+    if (!inspectionRequestId) {
+      return NextResponse.json({ error: "inspectionRequestId is required." }, { status: 400 });
+    }
+
+    const { data: inspection, error: inspectionError } = await admin
       .from("inspection_requests")
-      .select("id, tenant_user_id, property_id, status, inspection_fee_ngn")
+      .select("id, property_id, tenant_user_id, status, inspection_fee_ngn")
       .eq("id", inspectionRequestId)
+      .eq("tenant_user_id", user.id)
       .maybeSingle();
 
     if (inspectionError) {
-      return NextResponse.json({ error: inspectionError.message }, { status: 500 });
+      return NextResponse.json({ error: inspectionError.message }, { status: 400 });
     }
 
     if (!inspection) {
       return NextResponse.json({ error: "Inspection request not found." }, { status: 404 });
     }
 
-    if (inspection.tenant_user_id !== user.id) {
-      return NextResponse.json({ error: "You do not have access to this inspection request." }, { status: 403 });
-    }
-
     if (inspection.status !== "requested") {
-      return NextResponse.json(
-        { error: "Only requested inspections can be sent to Stripe checkout." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "This inspection is not payable." }, { status: 400 });
     }
 
-    const feeNgn = Number(inspection.inspection_fee_ngn || 0);
-    if (!Number.isFinite(feeNgn) || feeNgn <= 0) {
-      return NextResponse.json(
-        { error: "Inspection fee is invalid or not ready for payment." },
-        { status: 400 }
-      );
+    const { data: property } = await admin
+      .from("properties")
+      .select("title, area, city, state")
+      .eq("id", inspection.property_id)
+      .maybeSingle();
+
+    const propertyTitle = String(property?.title || "Inspection Request");
+    const amountNgn = Number(inspection.inspection_fee_ngn || 0);
+
+    if (!Number.isFinite(amountNgn) || amountNgn <= 0) {
+      return NextResponse.json({ error: "Invalid inspection amount." }, { status: 400 });
     }
 
     const baseUrl = getBaseUrl(req);
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      success_url: `${baseUrl}/tenant/inspections/${inspection.id}?payment=success`,
-      cancel_url: `${baseUrl}/tenant/inspections/${inspection.id}?payment=cancelled`,
-      customer_email: user.email ?? undefined,
+      payment_method_types: ["card"],
+      customer_email: user.email || undefined,
       metadata: {
-        inspection_request_id: inspection.id,
-        property_id: String(inspection.property_id),
-        tenant_user_id: user.id,
+        inspectionRequestId: inspection.id,
+        tenantUserId: user.id,
+        propertyId: inspection.property_id,
       },
       line_items: [
         {
           quantity: 1,
           price_data: {
             currency: "ngn",
-            unit_amount: Math.round(feeNgn * 100),
+            unit_amount: Math.round(amountNgn * 100),
             product_data: {
-              name: "Keyvera Inspection Fee",
-              description: `Inspection request ${inspection.id}`,
+              name: `Inspection Fee - ${propertyTitle}`,
+              description: "Keyvera inspection payment",
             },
           },
         },
       ],
+      success_url: `${baseUrl}/tenant/inspections/success`,
+      cancel_url: `${baseUrl}/tenant/inspections/${inspection.id}`,
     });
 
     return NextResponse.json({
       checkoutUrl: session.url,
-      sessionId: session.id,
     });
   } catch (error: any) {
     return NextResponse.json(
-      {
-        error: error?.message ?? "Failed to create Stripe checkout session.",
-      },
+      { error: error?.message || "Failed to create Stripe checkout session." },
       { status: 500 }
     );
   }

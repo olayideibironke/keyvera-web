@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type InspectionStatus = "requested" | "paid" | "scheduled" | "completed" | "cancelled";
@@ -13,6 +13,9 @@ type InspectionRow = {
   status: InspectionStatus;
   inspection_fee_ngn: number;
   created_at: string;
+  paid_at?: string | null;
+  scheduled_at?: string | null;
+  completed_at?: string | null;
 };
 
 type PropertyMini = {
@@ -48,6 +51,22 @@ function statusTone(status: string) {
   if (s === "completed") return "border-[rgba(14,165,163,0.25)] bg-[rgba(14,165,163,0.10)] text-[#0a4f63]";
   if (s === "cancelled") return "border-red-200 bg-red-50 text-red-700";
   return "border-black/10 bg-white/70 text-black/60";
+}
+
+function cleanLocation(property: PropertyMini | null) {
+  if (!property) return "—";
+  const parts = [property.area, property.city, property.state]
+    .map((x) => String(x ?? "").trim())
+    .filter(Boolean);
+
+  const deduped: string[] = [];
+  for (const part of parts) {
+    if (!deduped.some((x) => x.toLowerCase() === part.toLowerCase())) {
+      deduped.push(part);
+    }
+  }
+
+  return deduped.join(", ") || "—";
 }
 
 function SectionCard({
@@ -140,7 +159,7 @@ function HeroStat({
   return (
     <div className="rounded-[22px] border border-black/10 bg-white/75 p-4 shadow-[0_12px_30px_rgba(11,31,42,0.05)]">
       <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">{label}</div>
-      <div className="mt-2 text-lg font-semibold text-[#0b1f2a]">{value}</div>
+      <div className="mt-2 text-lg font-semibold text-[#0b1f2a] break-words">{value}</div>
     </div>
   );
 }
@@ -149,22 +168,17 @@ export default function TenantInspectionDetailPage() {
   const router = useRouter();
   const pathname = usePathname();
   const params = useParams();
-  const searchParams = useSearchParams();
   const inspectionId = params?.id as string;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [row, setRow] = useState<InspectionRow | null>(null);
   const [property, setProperty] = useState<PropertyMini | null>(null);
   const [action, setAction] = useState<null | "pay" | "cancel">(null);
 
   const isBusy = loading || action !== null;
 
-  const location = useMemo(() => {
-    if (!property) return "—";
-    return [property.area, property.city, property.state].filter(Boolean).join(", ") || "—";
-  }, [property]);
+  const location = useMemo(() => cleanLocation(property), [property]);
 
   async function requireUser() {
     const {
@@ -190,7 +204,7 @@ export default function TenantInspectionDetailPage() {
 
       const { data, error } = await supabase
         .from("inspection_requests")
-        .select("id,property_id,tenant_user_id,status,inspection_fee_ngn,created_at")
+        .select("id,property_id,tenant_user_id,status,inspection_fee_ngn,created_at,paid_at,scheduled_at,completed_at")
         .eq("id", inspectionId)
         .eq("tenant_user_id", user.id)
         .maybeSingle();
@@ -214,7 +228,8 @@ export default function TenantInspectionDetailPage() {
         .eq("id", ir.property_id)
         .maybeSingle();
 
-      if (!propErr && propData) setProperty(propData as PropertyMini);
+      if (propErr) throw propErr;
+      setProperty((propData ?? null) as PropertyMini | null);
 
       setLoading(false);
     } catch (e: any) {
@@ -230,20 +245,8 @@ export default function TenantInspectionDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inspectionId]);
 
-  useEffect(() => {
-    const paymentState = searchParams.get("payment");
-    if (paymentState === "success") {
-      setNotice("Stripe payment completed. Webhook confirmation is the next step we will wire up.");
-    } else if (paymentState === "cancelled") {
-      setNotice("Payment was cancelled before completion.");
-    } else {
-      setNotice(null);
-    }
-  }, [searchParams]);
-
   async function startStripeCheckout() {
-    if (!row) return;
-    if (row.status !== "requested") return;
+    if (!row || row.status !== "requested") return;
 
     setAction("pay");
     setError(null);
@@ -288,8 +291,7 @@ export default function TenantInspectionDetailPage() {
   }
 
   async function cancelRequest() {
-    if (!row) return;
-    if (row.status !== "requested") return;
+    if (!row || row.status !== "requested") return;
 
     setAction("cancel");
     setError(null);
@@ -323,7 +325,7 @@ export default function TenantInspectionDetailPage() {
               <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-[#0ea5a3] to-[#0a4f63] shadow-[0_14px_34px_rgba(10,79,99,0.22)]" />
               <div>
                 <h1 className="text-2xl font-semibold tracking-tight text-[#0b1f2a] md:text-3xl">Inspection</h1>
-                <p className="mt-1 text-sm text-black/60">Pay the fee to move forward. Scheduling comes after payment.</p>
+                <p className="mt-1 text-sm text-black/60">Review your inspection request and continue the next valid step.</p>
               </div>
             </div>
           </div>
@@ -335,12 +337,6 @@ export default function TenantInspectionDetailPage() {
 
         {error ? (
           <div className="mb-6 rounded-[22px] border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
-        ) : null}
-
-        {notice ? (
-          <div className="mb-6 rounded-[22px] border border-[rgba(14,165,163,0.22)] bg-[rgba(14,165,163,0.08)] p-4 text-sm text-[#0a4f63]">
-            {notice}
-          </div>
         ) : null}
 
         {loading ? (
@@ -379,12 +375,12 @@ export default function TenantInspectionDetailPage() {
 
               <SectionCard
                 title={<h3 className="text-lg font-semibold text-[#0b1f2a]">Next Step</h3>}
-                subtitle="The workflow advances after payment."
+                subtitle="Your next step depends on the current inspection status."
               >
                 {row.status === "requested" ? (
                   <div>
                     <div className="rounded-[22px] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                      This inspection is waiting for payment. Once Stripe checkout succeeds, the next step is webhook confirmation.
+                      This inspection is waiting for payment.
                     </div>
 
                     <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -405,13 +401,13 @@ export default function TenantInspectionDetailPage() {
 
                 {row.status === "paid" ? (
                   <div className="rounded-[22px] border border-[rgba(10,79,99,0.18)] bg-[rgba(10,79,99,0.06)] p-4 text-sm text-[#0a4f63]">
-                    Payment received. Next step: inspection scheduling and agent assignment.
+                    Payment successful. Your inspection is now waiting for scheduling.
                   </div>
                 ) : null}
 
                 {row.status === "scheduled" ? (
                   <div className="rounded-[22px] border border-black/10 bg-[rgba(11,31,42,0.04)] p-4 text-sm text-[#0b1f2a]">
-                    This inspection has been scheduled. Watch your inspection queue for updates.
+                    Your inspection has been scheduled. Check back here for completion updates.
                   </div>
                 ) : null}
 
