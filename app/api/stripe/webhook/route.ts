@@ -30,6 +30,7 @@ if (!resendApiKey) {
 const stripe = new Stripe(stripeSecretKey);
 const resend = new Resend(resendApiKey);
 const admin = createClient(supabaseUrl, supabaseServiceRoleKey);
+const webhookSecret: string = stripeWebhookSecret;
 
 function cleanLocation(area?: string | null, city?: string | null, state?: string | null) {
   const values = [area, city, state]
@@ -90,7 +91,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing Stripe signature." }, { status: 400 });
     }
 
-    const event = stripe.webhooks.constructEvent(body, signature, stripeWebhookSecret);
+    const event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
 
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
@@ -124,7 +125,7 @@ export async function POST(req: Request) {
             throw new Error(updateError.message);
           }
 
-          const [{ data: property }, { data: profile }, { data: authUser }] = await Promise.all([
+          const [{ data: property }, { data: profile }, authUserResult] = await Promise.all([
             admin
               .from("properties")
               .select("title, area, city, state")
@@ -138,7 +139,7 @@ export async function POST(req: Request) {
             admin.auth.admin.getUserById(existingInspection.tenant_user_id),
           ]);
 
-          const tenantEmail = authUser?.user?.email || null;
+          const tenantEmail = authUserResult?.data?.user?.email || null;
 
           if (tenantEmail) {
             await sendPaymentConfirmationEmail({
