@@ -40,6 +40,56 @@ type InspectionRow = {
 
 type ViewMode = "checking" | "public" | "private";
 
+type RevenueRules = {
+  inspection_budget_fee_ngn: string;
+  inspection_standard_fee_ngn: string;
+  inspection_premium_fee_ngn: string;
+  landlord_listing_activation_fee_ngn: string;
+  landlord_featured_boost_fee_ngn: string;
+  agent_onboarding_fee_ngn: string;
+  allow_launch_free_listing: boolean;
+  launch_free_listing_limit: string;
+  tenant_refund_policy: "review" | "credit_or_reschedule" | "restricted_after_scheduling";
+};
+
+const DEFAULT_RULES: RevenueRules = {
+  inspection_budget_fee_ngn: "5000",
+  inspection_standard_fee_ngn: "10000",
+  inspection_premium_fee_ngn: "15000",
+  landlord_listing_activation_fee_ngn: "5000",
+  landlord_featured_boost_fee_ngn: "10000",
+  agent_onboarding_fee_ngn: "5000",
+  allow_launch_free_listing: true,
+  launch_free_listing_limit: "1",
+  tenant_refund_policy: "restricted_after_scheduling",
+};
+
+function toRules(value: any): RevenueRules {
+  return {
+    inspection_budget_fee_ngn: String(value?.inspection_budget_fee_ngn ?? DEFAULT_RULES.inspection_budget_fee_ngn),
+    inspection_standard_fee_ngn: String(value?.inspection_standard_fee_ngn ?? DEFAULT_RULES.inspection_standard_fee_ngn),
+    inspection_premium_fee_ngn: String(value?.inspection_premium_fee_ngn ?? DEFAULT_RULES.inspection_premium_fee_ngn),
+    landlord_listing_activation_fee_ngn: String(
+      value?.landlord_listing_activation_fee_ngn ?? DEFAULT_RULES.landlord_listing_activation_fee_ngn
+    ),
+    landlord_featured_boost_fee_ngn: String(
+      value?.landlord_featured_boost_fee_ngn ?? DEFAULT_RULES.landlord_featured_boost_fee_ngn
+    ),
+    agent_onboarding_fee_ngn: String(value?.agent_onboarding_fee_ngn ?? DEFAULT_RULES.agent_onboarding_fee_ngn),
+    allow_launch_free_listing:
+      typeof value?.allow_launch_free_listing === "boolean"
+        ? value.allow_launch_free_listing
+        : DEFAULT_RULES.allow_launch_free_listing,
+    launch_free_listing_limit: String(value?.launch_free_listing_limit ?? DEFAULT_RULES.launch_free_listing_limit),
+    tenant_refund_policy:
+      value?.tenant_refund_policy === "review" ||
+      value?.tenant_refund_policy === "credit_or_reschedule" ||
+      value?.tenant_refund_policy === "restricted_after_scheduling"
+        ? value.tenant_refund_policy
+        : DEFAULT_RULES.tenant_refund_policy,
+  };
+}
+
 function formatNgn(n: number) {
   return `₦${Number(n || 0).toLocaleString()}`;
 }
@@ -246,6 +296,9 @@ export default function TenantPortalPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
+  const [rules, setRules] = useState<RevenueRules>(DEFAULT_RULES);
+  const [rulesLoaded, setRulesLoaded] = useState(false);
+
   const [q, setQ] = useState("");
   const [city, setCity] = useState("");
   const [area, setArea] = useState("");
@@ -280,6 +333,42 @@ export default function TenantPortalPage() {
       sort !== "newest"
     );
   }, [q, city, area, minRent, maxRent, type, sort]);
+
+  const pricingSummary = useMemo(() => {
+    return {
+      budget: Number(rules.inspection_budget_fee_ngn || 0),
+      standard: Number(rules.inspection_standard_fee_ngn || 0),
+      premium: Number(rules.inspection_premium_fee_ngn || 0),
+    };
+  }, [rules]);
+
+  const refundPolicyLabel = useMemo(() => {
+    if (rules.tenant_refund_policy === "review") return "Refunds reviewed case-by-case.";
+    if (rules.tenant_refund_policy === "credit_or_reschedule")
+      return "If an inspection fails from the platform side, Keyvera may offer credit or reschedule first.";
+    return "Once an inspection is scheduled, fees are generally restricted from refund unless Keyvera decides otherwise.";
+  }, [rules.tenant_refund_policy]);
+
+  async function loadRevenueRules() {
+    try {
+      const { data, error } = await supabase
+        .from("platform_settings")
+        .select("setting_value")
+        .eq("setting_key", "revenue_rules")
+        .maybeSingle();
+
+      if (error) throw error;
+      if (data?.setting_value) {
+        setRules(toRules(data.setting_value));
+      } else {
+        setRules(DEFAULT_RULES);
+      }
+    } catch {
+      setRules(DEFAULT_RULES);
+    } finally {
+      setRulesLoaded(true);
+    }
+  }
 
   async function resolveTenantAccess() {
     const {
@@ -400,7 +489,9 @@ export default function TenantPortalPage() {
     try {
       const { data, error } = await supabase
         .from("properties")
-        .select("id,title,area,city,state,status,rent_amount_ngn,rent_frequency,property_type,property_class,inspection_fee_ngn,inspection_fee_validated,created_at")
+        .select(
+          "id,title,area,city,state,status,rent_amount_ngn,rent_frequency,property_type,property_class,inspection_fee_ngn,inspection_fee_validated,created_at"
+        )
         .eq("status", "live")
         .eq("inspection_fee_validated", true)
         .order("created_at", { ascending: false })
@@ -465,10 +556,13 @@ export default function TenantPortalPage() {
   }
 
   useEffect(() => {
+    loadRevenueRules();
     loadAll();
+
     const { data: sub } = supabase.auth.onAuthStateChange(() => {
       loadAll();
     });
+
     return () => sub?.subscription?.unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -664,6 +758,52 @@ export default function TenantPortalPage() {
               </div>
             </div>
           </section>
+
+          <section className="mt-6 rounded-[32px] border border-black/10 bg-white/70 p-6 shadow-[0_18px_54px_rgba(11,31,42,0.10)] backdrop-blur-xl md:p-7">
+            <div className="flex flex-wrap items-center gap-2">
+              <InlinePill tone="border-[rgba(14,165,163,0.22)] bg-[rgba(14,165,163,0.08)] text-[#0a4f63]">
+                Paid trust-first workflow
+              </InlinePill>
+              <InlinePill tone="border-black/10 bg-white/80 text-black/60">
+                Admin-controlled launch pricing
+              </InlinePill>
+            </div>
+
+            <h2 className="mt-4 text-2xl font-semibold tracking-tight text-[#0b1f2a]">
+              Browsing is free. Verified inspection access carries a fee.
+            </h2>
+
+            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-black/60">
+              Keyvera is not a free-for-all marketplace. Fees help reduce fraud, filter unserious activity, and keep the
+              rental process more structured for serious tenants, landlords, and agents.
+            </p>
+
+            <div className="mt-6 grid gap-3 md:grid-cols-3">
+              <MetricCard label="Budget inspection" value={formatNgn(pricingSummary.budget)} tone="amber" />
+              <MetricCard label="Standard inspection" value={formatNgn(pricingSummary.standard)} tone="teal" />
+              <MetricCard label="Premium inspection" value={formatNgn(pricingSummary.premium)} tone="navy" />
+            </div>
+
+            <div className="mt-6 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+              <div className="rounded-[24px] border border-black/10 bg-white/80 p-5 shadow-[0_14px_34px_rgba(11,31,42,0.06)]">
+                <div className="text-sm font-semibold text-[#0b1f2a]">How tenant pricing works</div>
+                <div className="mt-3 space-y-3 text-sm leading-relaxed text-black/60">
+                  <p>Account creation is free. Browsing public listings is free.</p>
+                  <p>
+                    Payment starts only when you enter a verified inspection workflow for a property.
+                  </p>
+                  <p>
+                    The final inspection fee shown on a property is the active marketplace amount for that listing.
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-[24px] border border-black/10 bg-white/80 p-5 shadow-[0_14px_34px_rgba(11,31,42,0.06)]">
+                <div className="text-sm font-semibold text-[#0b1f2a]">Refund policy</div>
+                <div className="mt-3 text-sm leading-relaxed text-black/60">{refundPolicyLabel}</div>
+              </div>
+            </div>
+          </section>
         </div>
       </main>
     );
@@ -694,11 +834,43 @@ export default function TenantPortalPage() {
           </div>
         </div>
 
+        <div className="mb-4 rounded-[24px] border border-[rgba(14,165,163,0.20)] bg-[rgba(14,165,163,0.06)] p-4 text-sm text-[#0a4f63]">
+          Browsing stays free. Inspection payment begins only when you enter a verified property inspection workflow.
+        </div>
+
         <div className="mb-6 grid gap-3 md:grid-cols-4">
           <MetricCard label="My inspections" value={String(requestCounts.total)} tone="navy" />
           <MetricCard label="Requested" value={String(requestCounts.requested)} tone="amber" />
           <MetricCard label="Paid / Scheduled" value={`${requestCounts.paid + requestCounts.scheduled}`} tone="teal" />
           <MetricCard label="Completed" value={String(requestCounts.completed)} tone="teal" />
+        </div>
+
+        <div className="mb-6 grid gap-3 xl:grid-cols-[1.2fr_0.8fr]">
+          <Card
+            title={<h2 className="text-lg font-semibold text-[#0b1f2a]">Launch inspection pricing</h2>}
+            subtitle="Current platform-guided tenant pricing from admin settings."
+            right={
+              <InlinePill tone="border-black/10 bg-white/70 text-black/55">
+                {rulesLoaded ? "Live rules loaded" : "Loading rules..."}
+              </InlinePill>
+            }
+          >
+            <div className="grid gap-3 md:grid-cols-3">
+              <MetricCard label="Budget" value={formatNgn(pricingSummary.budget)} tone="amber" />
+              <MetricCard label="Standard" value={formatNgn(pricingSummary.standard)} tone="teal" />
+              <MetricCard label="Premium" value={formatNgn(pricingSummary.premium)} tone="navy" />
+            </div>
+          </Card>
+
+          <Card
+            title={<h2 className="text-lg font-semibold text-[#0b1f2a]">Tenant policy</h2>}
+            subtitle="Marketplace trust and fee logic."
+          >
+            <div className="space-y-3 text-sm leading-relaxed text-black/60">
+              <p>Keyvera uses paid inspection access to reduce fake demand and keep the process serious.</p>
+              <p>{refundPolicyLabel}</p>
+            </div>
+          </Card>
         </div>
 
         {errorMsg ? (
