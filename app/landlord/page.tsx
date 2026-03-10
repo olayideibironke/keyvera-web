@@ -61,6 +61,56 @@ type InspectionRow = {
   completed_by_full_name?: string | null;
 };
 
+type RevenueRules = {
+  inspection_budget_fee_ngn: string;
+  inspection_standard_fee_ngn: string;
+  inspection_premium_fee_ngn: string;
+  landlord_listing_activation_fee_ngn: string;
+  landlord_featured_boost_fee_ngn: string;
+  agent_onboarding_fee_ngn: string;
+  allow_launch_free_listing: boolean;
+  launch_free_listing_limit: string;
+  tenant_refund_policy: "review" | "credit_or_reschedule" | "restricted_after_scheduling";
+};
+
+const DEFAULT_RULES: RevenueRules = {
+  inspection_budget_fee_ngn: "5000",
+  inspection_standard_fee_ngn: "10000",
+  inspection_premium_fee_ngn: "15000",
+  landlord_listing_activation_fee_ngn: "5000",
+  landlord_featured_boost_fee_ngn: "10000",
+  agent_onboarding_fee_ngn: "5000",
+  allow_launch_free_listing: true,
+  launch_free_listing_limit: "1",
+  tenant_refund_policy: "restricted_after_scheduling",
+};
+
+function toRules(value: any): RevenueRules {
+  return {
+    inspection_budget_fee_ngn: String(value?.inspection_budget_fee_ngn ?? DEFAULT_RULES.inspection_budget_fee_ngn),
+    inspection_standard_fee_ngn: String(value?.inspection_standard_fee_ngn ?? DEFAULT_RULES.inspection_standard_fee_ngn),
+    inspection_premium_fee_ngn: String(value?.inspection_premium_fee_ngn ?? DEFAULT_RULES.inspection_premium_fee_ngn),
+    landlord_listing_activation_fee_ngn: String(
+      value?.landlord_listing_activation_fee_ngn ?? DEFAULT_RULES.landlord_listing_activation_fee_ngn
+    ),
+    landlord_featured_boost_fee_ngn: String(
+      value?.landlord_featured_boost_fee_ngn ?? DEFAULT_RULES.landlord_featured_boost_fee_ngn
+    ),
+    agent_onboarding_fee_ngn: String(value?.agent_onboarding_fee_ngn ?? DEFAULT_RULES.agent_onboarding_fee_ngn),
+    allow_launch_free_listing:
+      typeof value?.allow_launch_free_listing === "boolean"
+        ? value.allow_launch_free_listing
+        : DEFAULT_RULES.allow_launch_free_listing,
+    launch_free_listing_limit: String(value?.launch_free_listing_limit ?? DEFAULT_RULES.launch_free_listing_limit),
+    tenant_refund_policy:
+      value?.tenant_refund_policy === "review" ||
+      value?.tenant_refund_policy === "credit_or_reschedule" ||
+      value?.tenant_refund_policy === "restricted_after_scheduling"
+        ? value.tenant_refund_policy
+        : DEFAULT_RULES.tenant_refund_policy,
+  };
+}
+
 function formatNgn(n: number) {
   return `₦${Number(n || 0).toLocaleString()}`;
 }
@@ -343,6 +393,31 @@ export default function LandlordPropertiesPage() {
   const [inspectionsErr, setInspectionsErr] = useState<string | null>(null);
   const [inspectionPropertyId, setInspectionPropertyId] = useState<string>("");
 
+  const [rules, setRules] = useState<RevenueRules>(DEFAULT_RULES);
+  const [rulesLoaded, setRulesLoaded] = useState(false);
+
+  async function loadRevenueRules() {
+    try {
+      const { data, error } = await supabase
+        .from("platform_settings")
+        .select("setting_value")
+        .eq("setting_key", "revenue_rules")
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data?.setting_value) {
+        setRules(toRules(data.setting_value));
+      } else {
+        setRules(DEFAULT_RULES);
+      }
+    } catch {
+      setRules(DEFAULT_RULES);
+    } finally {
+      setRulesLoaded(true);
+    }
+  }
+
   async function resolveLandlordAccess() {
     const {
       data: { user },
@@ -588,7 +663,9 @@ export default function LandlordPropertiesPage() {
   }
 
   useEffect(() => {
+    loadRevenueRules();
     load();
+
     const { data: sub } = supabase.auth.onAuthStateChange(() => {
       load();
     });
@@ -677,6 +754,22 @@ export default function LandlordPropertiesPage() {
       selectedInspections,
     };
   }, [properties, inspections, inspectionsForSelected.length]);
+
+  const revenueSummary = useMemo(() => {
+    return {
+      listingActivationFee: Number(rules.landlord_listing_activation_fee_ngn || 0),
+      featuredBoostFee: Number(rules.landlord_featured_boost_fee_ngn || 0),
+      freeLimit: Number(rules.launch_free_listing_limit || 0),
+      freeEnabled: !!rules.allow_launch_free_listing,
+    };
+  }, [rules]);
+
+  const landlordRuleMessage = useMemo(() => {
+    if (revenueSummary.freeEnabled) {
+      return `Landlords can draft listings for free. Early launch supports ${revenueSummary.freeLimit} free live listing(s), then listing activation fees apply.`;
+    }
+    return "Landlords can draft listings for free, but every live property requires paid listing activation.";
+  }, [revenueSummary]);
 
   async function submitAuthorization() {
     setActionMsg(null);
@@ -869,16 +962,53 @@ export default function LandlordPropertiesPage() {
                     body="Join Keyvera, complete your access, and move into a more serious property workflow."
                   />
                   <LandingInfoCard
-                    title="Structured next step"
-                    body="Once authenticated, your next clear action becomes Create Property so you can begin listing properly."
+                    title="Structured listing activation"
+                    body={
+                      revenueSummary.freeEnabled
+                        ? `Draft for free. Early launch supports ${revenueSummary.freeLimit} free live listing(s), then listing activation starts at ${formatNgn(
+                            revenueSummary.listingActivationFee
+                          )}.`
+                        : `Draft for free. Live listings require activation, starting at ${formatNgn(
+                            revenueSummary.listingActivationFee
+                          )}.`
+                    }
                   />
                   <LandingInfoCard
-                    title="Trust-first direction"
-                    body="We are shaping the platform to help landlords feel safer listing and operating within a controlled environment."
+                    title="Premium visibility options"
+                    body={`Featured listing boosts begin at ${formatNgn(
+                      revenueSummary.featuredBoostFee
+                    )} for stronger marketplace exposure.`}
                   />
                 </div>
               </div>
             </div>
+          </div>
+        </section>
+
+        <section className="mt-6 rounded-[32px] border border-black/10 bg-white/70 p-6 shadow-[0_18px_54px_rgba(11,31,42,0.10)] backdrop-blur-xl md:p-7">
+          <div className="flex flex-wrap items-center gap-2">
+            <InlinePill tone="border-[rgba(14,165,163,0.22)] bg-[rgba(14,165,163,0.08)] text-[#0a4f63]">
+              Paid trust-first marketplace
+            </InlinePill>
+            <InlinePill tone="border-black/10 bg-white/80 text-black/60">
+              Admin-controlled launch rules
+            </InlinePill>
+          </div>
+
+          <h2 className="mt-4 text-2xl font-semibold tracking-tight text-[#0b1f2a]">
+            Draft free. Go live with structure.
+          </h2>
+
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-black/60">{landlordRuleMessage}</p>
+
+          <div className="mt-6 grid gap-3 md:grid-cols-3">
+            <StatCard label="Listing activation" value={formatNgn(revenueSummary.listingActivationFee)} tone="navy" />
+            <StatCard label="Featured boost" value={formatNgn(revenueSummary.featuredBoostFee)} tone="teal" />
+            <StatCard
+              label="Free live listing limit"
+              value={revenueSummary.freeEnabled ? String(revenueSummary.freeLimit) : "0"}
+              tone="amber"
+            />
           </div>
         </section>
       </PageShell>
@@ -897,7 +1027,9 @@ export default function LandlordPropertiesPage() {
             <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-[#0ea5a3] to-[#0a4f63] shadow-[0_14px_34px_rgba(10,79,99,0.22)]" />
             <div>
               <h1 className="text-2xl font-semibold tracking-tight text-[#0b1f2a] md:text-3xl">Landlord Dashboard</h1>
-              <p className="mt-1 text-sm text-black/60">Welcome to Keyvera. Your next step is to create and manage your property listings.</p>
+              <p className="mt-1 text-sm text-black/60">
+                Welcome to Keyvera. Your next step is to create and manage your property listings.
+              </p>
             </div>
           </div>
 
@@ -912,6 +1044,21 @@ export default function LandlordPropertiesPage() {
           <GhostButton onClick={load}>Refresh</GhostButton>
           <PrimaryButton onClick={() => router.push("/landlord/properties/new")}>+ Create Property</PrimaryButton>
         </div>
+      </div>
+
+      <div className="mb-4 rounded-[24px] border border-[rgba(14,165,163,0.20)] bg-[rgba(14,165,163,0.06)] p-4 text-sm text-[#0a4f63]">
+        {landlordRuleMessage}
+      </div>
+
+      <div className="mb-6 grid gap-3 md:grid-cols-4">
+        <StatCard label="Listing activation" value={formatNgn(revenueSummary.listingActivationFee)} tone="navy" />
+        <StatCard label="Featured boost" value={formatNgn(revenueSummary.featuredBoostFee)} tone="teal" />
+        <StatCard
+          label="Free live listing limit"
+          value={revenueSummary.freeEnabled ? String(revenueSummary.freeLimit) : "0"}
+          tone="amber"
+        />
+        <StatCard label="Rules status" value={rulesLoaded ? "Live" : "Loading"} tone="neutral" />
       </div>
 
       <div className="mb-6 grid gap-3 md:grid-cols-5">
@@ -949,7 +1096,13 @@ export default function LandlordPropertiesPage() {
           right={<PrimaryButton onClick={() => router.push("/landlord/properties/new")}>+ Create Property</PrimaryButton>}
         >
           <div className="rounded-2xl border border-black/10 bg-white/70 p-6 text-sm text-black/60">
-            Once your property is submitted and reviewed, you can begin moving through the landlord workflow.
+            {revenueSummary.freeEnabled
+              ? `You can draft properties for free. Early launch supports ${revenueSummary.freeLimit} free live listing(s), then listing activation applies at ${formatNgn(
+                  revenueSummary.listingActivationFee
+                )} per live property.`
+              : `You can draft properties for free. Live listing activation applies at ${formatNgn(
+                  revenueSummary.listingActivationFee
+                )} per property once you move into the paid marketplace stage.`}
           </div>
         </Card>
       ) : (
@@ -959,6 +1112,10 @@ export default function LandlordPropertiesPage() {
             subtitle="Your properties and their current status."
             right={<div className="text-xs text-black/50">Premium listing view</div>}
           >
+            <div className="mb-5 rounded-[22px] border border-black/10 bg-white/80 p-4 text-sm text-black/60">
+              Live marketplace participation is structured. Drafting stays free, while listing activation and featured boosts follow the current platform pricing rules.
+            </div>
+
             <div className="hidden xl:block">
               <DataTableShell>
                 <div className="overflow-x-auto">
