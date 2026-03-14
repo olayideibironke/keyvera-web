@@ -14,6 +14,56 @@ type Property = {
   created_at: string;
 };
 
+type RevenueRules = {
+  inspection_budget_fee_ngn: string;
+  inspection_standard_fee_ngn: string;
+  inspection_premium_fee_ngn: string;
+  landlord_listing_activation_fee_ngn: string;
+  landlord_featured_boost_fee_ngn: string;
+  agent_onboarding_fee_ngn: string;
+  allow_launch_free_listing: boolean;
+  launch_free_listing_limit: string;
+  tenant_refund_policy: "review" | "credit_or_reschedule" | "restricted_after_scheduling";
+};
+
+const DEFAULT_RULES: RevenueRules = {
+  inspection_budget_fee_ngn: "5000",
+  inspection_standard_fee_ngn: "10000",
+  inspection_premium_fee_ngn: "15000",
+  landlord_listing_activation_fee_ngn: "5000",
+  landlord_featured_boost_fee_ngn: "10000",
+  agent_onboarding_fee_ngn: "5000",
+  allow_launch_free_listing: true,
+  launch_free_listing_limit: "1",
+  tenant_refund_policy: "restricted_after_scheduling",
+};
+
+function toRules(value: any): RevenueRules {
+  return {
+    inspection_budget_fee_ngn: String(value?.inspection_budget_fee_ngn ?? DEFAULT_RULES.inspection_budget_fee_ngn),
+    inspection_standard_fee_ngn: String(value?.inspection_standard_fee_ngn ?? DEFAULT_RULES.inspection_standard_fee_ngn),
+    inspection_premium_fee_ngn: String(value?.inspection_premium_fee_ngn ?? DEFAULT_RULES.inspection_premium_fee_ngn),
+    landlord_listing_activation_fee_ngn: String(
+      value?.landlord_listing_activation_fee_ngn ?? DEFAULT_RULES.landlord_listing_activation_fee_ngn
+    ),
+    landlord_featured_boost_fee_ngn: String(
+      value?.landlord_featured_boost_fee_ngn ?? DEFAULT_RULES.landlord_featured_boost_fee_ngn
+    ),
+    agent_onboarding_fee_ngn: String(value?.agent_onboarding_fee_ngn ?? DEFAULT_RULES.agent_onboarding_fee_ngn),
+    allow_launch_free_listing:
+      typeof value?.allow_launch_free_listing === "boolean"
+        ? value.allow_launch_free_listing
+        : DEFAULT_RULES.allow_launch_free_listing,
+    launch_free_listing_limit: String(value?.launch_free_listing_limit ?? DEFAULT_RULES.launch_free_listing_limit),
+    tenant_refund_policy:
+      value?.tenant_refund_policy === "review" ||
+      value?.tenant_refund_policy === "credit_or_reschedule" ||
+      value?.tenant_refund_policy === "restricted_after_scheduling"
+        ? value.tenant_refund_policy
+        : DEFAULT_RULES.tenant_refund_policy,
+  };
+}
+
 function formatNgn(n?: number | null) {
   if (!n) return "—";
   return `₦${Number(n).toLocaleString()}`;
@@ -45,6 +95,27 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(status)}`}>
       {status}
+    </span>
+  );
+}
+
+function InfoBadge({
+  children,
+  tone = "neutral",
+}: {
+  children: React.ReactNode;
+  tone?: "neutral" | "good" | "warn";
+}) {
+  const cls =
+    tone === "good"
+      ? "border-[rgba(14,165,163,0.18)] bg-[rgba(14,165,163,0.10)] text-[#0a4f63]"
+      : tone === "warn"
+      ? "border-amber-200 bg-amber-50 text-amber-900"
+      : "border-black/10 bg-white/70 text-black/55";
+
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${cls}`}>
+      {children}
     </span>
   );
 }
@@ -126,8 +197,33 @@ export default function LandlordPropertiesPage() {
   const [loading, setLoading] = useState(true);
   const [properties, setProperties] = useState<Property[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [landlordId, setLandlordId] = useState<string | null>(null);
+  const [rules, setRules] = useState<RevenueRules>(DEFAULT_RULES);
+  const [rulesLoaded, setRulesLoaded] = useState(false);
 
   useEffect(() => {
+    async function loadRevenueRules() {
+      try {
+        const { data, error } = await supabase
+          .from("platform_settings")
+          .select("setting_value")
+          .eq("setting_key", "revenue_rules")
+          .maybeSingle();
+
+        if (error) throw error;
+
+        if (data?.setting_value) {
+          setRules(toRules(data.setting_value));
+        } else {
+          setRules(DEFAULT_RULES);
+        }
+      } catch {
+        setRules(DEFAULT_RULES);
+      } finally {
+        setRulesLoaded(true);
+      }
+    }
+
     async function load() {
       setLoading(true);
       setError(null);
@@ -158,6 +254,8 @@ export default function LandlordPropertiesPage() {
         return;
       }
 
+      setLandlordId(landlordRow.id);
+
       const { data, error: propsErr } = await supabase
         .from("properties")
         .select("id,title,area,city,rent_amount_ngn,status,created_at")
@@ -174,6 +272,7 @@ export default function LandlordPropertiesPage() {
       setLoading(false);
     }
 
+    loadRevenueRules();
     load();
   }, [router]);
 
@@ -182,8 +281,58 @@ export default function LandlordPropertiesPage() {
     const live = properties.filter((p) => String(p.status).toLowerCase() === "live").length;
     const pending = properties.filter((p) => String(p.status).toLowerCase() === "pending_review").length;
     const draft = properties.filter((p) => String(p.status).toLowerCase() === "draft").length;
-    return { total, live, pending, draft };
+    const approved = properties.filter((p) => String(p.status).toLowerCase() === "approved").length;
+    return { total, live, pending, draft, approved };
   }, [properties]);
+
+  const listingActivationFee = useMemo(
+    () => Number(rules.landlord_listing_activation_fee_ngn || 0),
+    [rules.landlord_listing_activation_fee_ngn]
+  );
+
+  const freeListingEnabled = !!rules.allow_launch_free_listing;
+
+  const freeListingLimit = useMemo(
+    () => Math.max(0, Number(rules.launch_free_listing_limit || 0)),
+    [rules.launch_free_listing_limit]
+  );
+
+  const usedFreeLiveListings = useMemo(
+    () => properties.filter((p) => String(p.status).toLowerCase() === "live").length,
+    [properties]
+  );
+
+  const freeListingsRemaining = useMemo(() => {
+    if (!freeListingEnabled) return 0;
+    return Math.max(0, freeListingLimit - usedFreeLiveListings);
+  }, [freeListingEnabled, freeListingLimit, usedFreeLiveListings]);
+
+  const approvedAwaitingActivation = useMemo(
+    () => properties.filter((p) => String(p.status).toLowerCase() === "approved"),
+    [properties]
+  );
+
+  function activationLabelForProperty(p: Property) {
+    const status = String(p.status).toLowerCase();
+
+    if (status === "live") return "Live in marketplace";
+    if (status === "pending_review") return "Awaiting review";
+    if (status === "draft") return "Finish and submit";
+    if (status === "suspended") return "Suspended by admin";
+
+    if (status === "approved") {
+      if (freeListingEnabled && freeListingsRemaining > 0) {
+        return "Eligible for free launch slot";
+      }
+      return `Activation fee required: ${formatNgn(listingActivationFee)}`;
+    }
+
+    return "—";
+  }
+
+  function openActivationFlow(propertyId: string) {
+    router.push(`/landlord/properties/${propertyId}?activation=1`);
+  }
 
   if (loading) {
     return (
@@ -197,6 +346,10 @@ export default function LandlordPropertiesPage() {
 
   return (
     <main className="min-h-[calc(100vh-140px)]">
+      <div className="mb-5 rounded-[24px] border border-[rgba(14,165,163,0.20)] bg-[rgba(14,165,163,0.06)] p-4 text-sm text-[#0a4f63]">
+        Drafting and review submission are free. Live marketplace activation follows Keyvera’s landlord pricing rules.
+      </div>
+
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-3">
@@ -205,6 +358,14 @@ export default function LandlordPropertiesPage() {
               <h1 className="text-2xl font-semibold tracking-tight text-[#0b1f2a] md:text-3xl">My Properties</h1>
               <p className="mt-1 text-sm text-black/60">Manage your listings and review each property’s readiness.</p>
             </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <InfoBadge tone="good">Listing activation: {formatNgn(listingActivationFee)}</InfoBadge>
+            <InfoBadge tone={freeListingsRemaining > 0 ? "good" : "warn"}>
+              Free live slots left: {freeListingsRemaining}
+            </InfoBadge>
+            <InfoBadge>Rules: {rulesLoaded ? "Live" : "Loading"}</InfoBadge>
           </div>
         </div>
 
@@ -224,12 +385,22 @@ export default function LandlordPropertiesPage() {
         </div>
       </div>
 
-      <div className="mb-6 grid gap-3 md:grid-cols-4">
+      <div className="mb-6 grid gap-3 md:grid-cols-5">
         <StatCard label="Total listings" value={String(stats.total)} tone="navy" />
         <StatCard label="Live" value={String(stats.live)} tone="teal" />
+        <StatCard label="Approved" value={String(stats.approved)} tone="teal" />
         <StatCard label="Pending review" value={String(stats.pending)} tone="amber" />
         <StatCard label="Drafts" value={String(stats.draft)} tone="neutral" />
       </div>
+
+      {approvedAwaitingActivation.length > 0 ? (
+        <div className="mb-6 rounded-[28px] border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+          You have {approvedAwaitingActivation.length} approved listing{approvedAwaitingActivation.length === 1 ? "" : "s"} waiting for marketplace activation.
+          {freeListingEnabled && freeListingsRemaining > 0
+            ? ` You still have ${freeListingsRemaining} free live slot(s) remaining.`
+            : ` Live activation now requires ${formatNgn(listingActivationFee)} per listing.`}
+        </div>
+      ) : null}
 
       {error ? (
         <div className="mb-6 rounded-[28px] border border-red-200 bg-red-50 p-5 text-sm text-red-700">
@@ -263,49 +434,65 @@ export default function LandlordPropertiesPage() {
           <div className="hidden xl:block">
             <DataTableShell>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1160px] text-left text-sm">
+                <table className="w-full min-w-[1320px] text-left text-sm">
                   <TableHead>
                     <tr>
                       <th className="px-5 py-4 text-xs font-semibold text-black/60">Title</th>
                       <th className="px-5 py-4 text-xs font-semibold text-black/60">Location</th>
                       <th className="px-5 py-4 text-xs font-semibold text-black/60">Rent</th>
                       <th className="px-5 py-4 text-xs font-semibold text-black/60">Status</th>
+                      <th className="px-5 py-4 text-xs font-semibold text-black/60">Activation</th>
                       <th className="px-5 py-4 text-xs font-semibold text-black/60">Created</th>
-                      <th className="w-[180px] px-5 py-4"></th>
+                      <th className="w-[260px] px-5 py-4"></th>
                     </tr>
                   </TableHead>
                   <tbody>
-                    {properties.map((p) => (
-                      <tr key={p.id} className="border-t border-black/5 align-top">
-                        <td className="px-5 py-5">
-                          <div className="font-semibold text-[#0b1f2a]">{p.title}</div>
-                          <div className="mt-1 font-mono text-xs text-black/50">{shortId(p.id)}</div>
-                        </td>
-                        <td className="px-5 py-5 text-black/70">{[p.area, p.city].filter(Boolean).join(", ") || "—"}</td>
-                        <td className="px-5 py-5 text-black/70">{formatNgn(p.rent_amount_ngn)}</td>
-                        <td className="px-5 py-5">
-                          <StatusBadge status={p.status} />
-                        </td>
-                        <td className="px-5 py-5 text-black/60">{formatDt(p.created_at)}</td>
-                        <td className="px-5 py-5 text-right">
-                          {p.status === "draft" ? (
-                            <button
-                              onClick={() => router.push(`/landlord/properties/${p.id}/edit`)}
-                              className="rounded-2xl border border-black/10 bg-white/70 px-4 py-2.5 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
-                            >
-                              Continue Editing
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => router.push(`/landlord/properties/${p.id}`)}
-                              className="rounded-2xl border border-black/10 bg-white/70 px-4 py-2.5 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
-                            >
-                              View
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                    {properties.map((p) => {
+                      const lower = String(p.status).toLowerCase();
+                      return (
+                        <tr key={p.id} className="border-t border-black/5 align-top">
+                          <td className="px-5 py-5">
+                            <div className="font-semibold text-[#0b1f2a]">{p.title}</div>
+                            <div className="mt-1 font-mono text-xs text-black/50">{shortId(p.id)}</div>
+                          </td>
+                          <td className="px-5 py-5 text-black/70">{[p.area, p.city].filter(Boolean).join(", ") || "—"}</td>
+                          <td className="px-5 py-5 text-black/70">{formatNgn(p.rent_amount_ngn)}</td>
+                          <td className="px-5 py-5">
+                            <StatusBadge status={p.status} />
+                          </td>
+                          <td className="px-5 py-5 text-black/60">{activationLabelForProperty(p)}</td>
+                          <td className="px-5 py-5 text-black/60">{formatDt(p.created_at)}</td>
+                          <td className="px-5 py-5 text-right">
+                            <div className="flex flex-wrap justify-end gap-2">
+                              {lower === "draft" ? (
+                                <button
+                                  onClick={() => router.push(`/landlord/properties/${p.id}/edit`)}
+                                  className="rounded-2xl border border-black/10 bg-white/70 px-4 py-2.5 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                                >
+                                  Continue Editing
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => router.push(`/landlord/properties/${p.id}`)}
+                                  className="rounded-2xl border border-black/10 bg-white/70 px-4 py-2.5 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                                >
+                                  View
+                                </button>
+                              )}
+
+                              {lower === "approved" ? (
+                                <button
+                                  onClick={() => openActivationFlow(p.id)}
+                                  className="rounded-2xl bg-[#0b1f2a] px-4 py-2.5 text-xs font-semibold text-white shadow-[0_12px_28px_rgba(11,31,42,0.20)] transition hover:opacity-90"
+                                >
+                                  Activate Listing
+                                </button>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -313,53 +500,69 @@ export default function LandlordPropertiesPage() {
           </div>
 
           <div className="grid gap-4 xl:hidden">
-            {properties.map((p) => (
-              <article
-                key={p.id}
-                className="rounded-[24px] border border-black/10 bg-white/80 p-4 shadow-[0_14px_34px_rgba(11,31,42,0.06)]"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-semibold text-[#0b1f2a]">{p.title}</div>
-                    <div className="mt-1 font-mono text-xs text-black/50">{shortId(p.id)}</div>
+            {properties.map((p) => {
+              const lower = String(p.status).toLowerCase();
+              return (
+                <article
+                  key={p.id}
+                  className="rounded-[24px] border border-black/10 bg-white/80 p-4 shadow-[0_14px_34px_rgba(11,31,42,0.06)]"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-[#0b1f2a]">{p.title}</div>
+                      <div className="mt-1 font-mono text-xs text-black/50">{shortId(p.id)}</div>
+                    </div>
+                    <StatusBadge status={p.status} />
                   </div>
-                  <StatusBadge status={p.status} />
-                </div>
 
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Location</div>
-                    <div className="mt-1 text-sm text-black/60">{[p.area, p.city].filter(Boolean).join(", ") || "—"}</div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Location</div>
+                      <div className="mt-1 text-sm text-black/60">{[p.area, p.city].filter(Boolean).join(", ") || "—"}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Rent</div>
+                      <div className="mt-1 text-sm text-black/60">{formatNgn(p.rent_amount_ngn)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Activation</div>
+                      <div className="mt-1 text-sm text-black/60">{activationLabelForProperty(p)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Created</div>
+                      <div className="mt-1 text-sm text-black/60">{formatDt(p.created_at)}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Rent</div>
-                    <div className="mt-1 text-sm text-black/60">{formatNgn(p.rent_amount_ngn)}</div>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Created</div>
-                    <div className="mt-1 text-sm text-black/60">{formatDt(p.created_at)}</div>
-                  </div>
-                </div>
 
-                <div className="mt-5">
-                  {p.status === "draft" ? (
-                    <button
-                      onClick={() => router.push(`/landlord/properties/${p.id}/edit`)}
-                      className="w-full rounded-2xl border border-black/10 bg-white/70 px-4 py-3 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
-                    >
-                      Continue Editing
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => router.push(`/landlord/properties/${p.id}`)}
-                      className="w-full rounded-2xl border border-black/10 bg-white/70 px-4 py-3 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
-                    >
-                      View
-                    </button>
-                  )}
-                </div>
-              </article>
-            ))}
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    {lower === "draft" ? (
+                      <button
+                        onClick={() => router.push(`/landlord/properties/${p.id}/edit`)}
+                        className="rounded-2xl border border-black/10 bg-white/70 px-4 py-3 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                      >
+                        Continue Editing
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => router.push(`/landlord/properties/${p.id}`)}
+                        className="rounded-2xl border border-black/10 bg-white/70 px-4 py-3 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                      >
+                        View
+                      </button>
+                    )}
+
+                    {lower === "approved" ? (
+                      <button
+                        onClick={() => openActivationFlow(p.id)}
+                        className="rounded-2xl bg-[#0b1f2a] px-4 py-3 text-xs font-semibold text-white shadow-[0_12px_28px_rgba(11,31,42,0.20)] transition hover:opacity-90"
+                      >
+                        Activate Listing
+                      </button>
+                    ) : null}
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </SectionShell>
       )}
