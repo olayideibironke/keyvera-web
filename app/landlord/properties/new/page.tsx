@@ -11,6 +11,30 @@ type LandlordRow = {
   user_id: string;
 };
 
+type RevenueRules = {
+  inspection_budget_fee_ngn: string;
+  inspection_standard_fee_ngn: string;
+  inspection_premium_fee_ngn: string;
+  landlord_listing_activation_fee_ngn: string;
+  landlord_featured_boost_fee_ngn: string;
+  agent_onboarding_fee_ngn: string;
+  allow_launch_free_listing: boolean;
+  launch_free_listing_limit: string;
+  tenant_refund_policy: "review" | "credit_or_reschedule" | "restricted_after_scheduling";
+};
+
+const DEFAULT_RULES: RevenueRules = {
+  inspection_budget_fee_ngn: "5000",
+  inspection_standard_fee_ngn: "10000",
+  inspection_premium_fee_ngn: "15000",
+  landlord_listing_activation_fee_ngn: "5000",
+  landlord_featured_boost_fee_ngn: "10000",
+  agent_onboarding_fee_ngn: "5000",
+  allow_launch_free_listing: true,
+  launch_free_listing_limit: "1",
+  tenant_refund_policy: "restricted_after_scheduling",
+};
+
 const REQUIRED_FIELDS = [
   "title",
   "description",
@@ -31,6 +55,36 @@ function t(v: string) {
 function isPositiveNumberString(v: string) {
   const n = Number(v);
   return Number.isFinite(n) && n > 0;
+}
+
+function formatNgn(n: number) {
+  return `₦${Number(n || 0).toLocaleString()}`;
+}
+
+function toRules(value: any): RevenueRules {
+  return {
+    inspection_budget_fee_ngn: String(value?.inspection_budget_fee_ngn ?? DEFAULT_RULES.inspection_budget_fee_ngn),
+    inspection_standard_fee_ngn: String(value?.inspection_standard_fee_ngn ?? DEFAULT_RULES.inspection_standard_fee_ngn),
+    inspection_premium_fee_ngn: String(value?.inspection_premium_fee_ngn ?? DEFAULT_RULES.inspection_premium_fee_ngn),
+    landlord_listing_activation_fee_ngn: String(
+      value?.landlord_listing_activation_fee_ngn ?? DEFAULT_RULES.landlord_listing_activation_fee_ngn
+    ),
+    landlord_featured_boost_fee_ngn: String(
+      value?.landlord_featured_boost_fee_ngn ?? DEFAULT_RULES.landlord_featured_boost_fee_ngn
+    ),
+    agent_onboarding_fee_ngn: String(value?.agent_onboarding_fee_ngn ?? DEFAULT_RULES.agent_onboarding_fee_ngn),
+    allow_launch_free_listing:
+      typeof value?.allow_launch_free_listing === "boolean"
+        ? value.allow_launch_free_listing
+        : DEFAULT_RULES.allow_launch_free_listing,
+    launch_free_listing_limit: String(value?.launch_free_listing_limit ?? DEFAULT_RULES.launch_free_listing_limit),
+    tenant_refund_policy:
+      value?.tenant_refund_policy === "review" ||
+      value?.tenant_refund_policy === "credit_or_reschedule" ||
+      value?.tenant_refund_policy === "restricted_after_scheduling"
+        ? value.tenant_refund_policy
+        : DEFAULT_RULES.tenant_refund_policy,
+  };
 }
 
 function PageShell({ children }: { children: React.ReactNode }) {
@@ -87,7 +141,7 @@ function Message({
   tone,
   children,
 }: {
-  tone: "error" | "warn" | "info";
+  tone: "error" | "warn" | "info" | "success";
   children: React.ReactNode;
 }) {
   const cls =
@@ -95,6 +149,8 @@ function Message({
       ? "border-red-200 bg-red-50 text-red-700"
       : tone === "warn"
       ? "border-amber-200 bg-amber-50 text-amber-900"
+      : tone === "success"
+      ? "border-[rgba(14,165,163,0.22)] bg-[rgba(14,165,163,0.08)] text-[#0a4f63]"
       : "border-black/10 bg-white/70 text-black/70";
 
   return <div className={`rounded-[24px] border p-4 text-sm ${cls}`}>{children}</div>;
@@ -165,6 +221,44 @@ function Field({
   );
 }
 
+function MetricCard({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  tone?: "neutral" | "teal" | "navy" | "amber";
+}) {
+  const ring =
+    tone === "teal"
+      ? "border-[rgba(14,165,163,0.22)] bg-[rgba(14,165,163,0.06)]"
+      : tone === "navy"
+      ? "border-black/10 bg-[rgba(11,31,42,0.04)]"
+      : tone === "amber"
+      ? "border-amber-200 bg-amber-50/70"
+      : "border-black/10 bg-white/70";
+
+  const dot =
+    tone === "teal"
+      ? "bg-[#0ea5a3]"
+      : tone === "navy"
+      ? "bg-[#0b1f2a]"
+      : tone === "amber"
+      ? "bg-amber-500"
+      : "bg-black/40";
+
+  return (
+    <div className={`rounded-[22px] border p-5 shadow-[0_12px_30px_rgba(11,31,42,0.06)] backdrop-blur ${ring}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs font-semibold text-black/60">{label}</div>
+        <span className={`h-2 w-2 rounded-full ${dot}`} style={{ opacity: 0.75 }} />
+      </div>
+      <div className="mt-2 text-2xl font-semibold text-[#0b1f2a]">{value}</div>
+    </div>
+  );
+}
+
 export default function LandlordCreatePropertyPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -182,6 +276,10 @@ export default function LandlordCreatePropertyPage() {
   const [propertyId, setPropertyId] = useState<string | null>(null);
 
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
+
+  const [rules, setRules] = useState<RevenueRules>(DEFAULT_RULES);
+  const [rulesLoaded, setRulesLoaded] = useState(false);
+  const [usedFreeLiveListings, setUsedFreeLiveListings] = useState(0);
 
   const [form, setForm] = useState({
     title: "",
@@ -241,6 +339,43 @@ export default function LandlordCreatePropertyPage() {
     return true;
   }, [isBusy, userId, landlordId, landlordProfileMissing, missingRequired.length]);
 
+  const listingActivationFee = useMemo(
+    () => Number(rules.landlord_listing_activation_fee_ngn || 0),
+    [rules.landlord_listing_activation_fee_ngn]
+  );
+
+  const featuredBoostFee = useMemo(
+    () => Number(rules.landlord_featured_boost_fee_ngn || 0),
+    [rules.landlord_featured_boost_fee_ngn]
+  );
+
+  const freeListingLimit = useMemo(
+    () => Math.max(0, Number(rules.launch_free_listing_limit || 0)),
+    [rules.launch_free_listing_limit]
+  );
+
+  const freeListingEnabled = !!rules.allow_launch_free_listing;
+
+  const freeListingsRemaining = useMemo(() => {
+    if (!freeListingEnabled) return 0;
+    return Math.max(0, freeListingLimit - usedFreeLiveListings);
+  }, [freeListingEnabled, freeListingLimit, usedFreeLiveListings]);
+
+  const listingRuleMessage = useMemo(() => {
+    if (freeListingEnabled) {
+      if (freeListingsRemaining > 0) {
+        return `Drafting and review submission are free. You still have ${freeListingsRemaining} free live listing slot(s) remaining before paid listing activation applies.`;
+      }
+      return `Drafting and review submission are free. Your free live listing allocation has been exhausted, so live marketplace activation will require ${formatNgn(
+        listingActivationFee
+      )}.`;
+    }
+
+    return `Drafting and review submission are free. Live marketplace activation requires ${formatNgn(
+      listingActivationFee
+    )}.`;
+  }, [freeListingEnabled, freeListingsRemaining, listingActivationFee]);
+
   async function getAuthoritativeUser() {
     const { data, error } = await supabase.auth.getUser();
     if (error) throw error;
@@ -264,6 +399,43 @@ export default function LandlordCreatePropertyPage() {
     if (data) return data as LandlordRow;
 
     return await fetchLandlordRowByUserId(authUid);
+  }
+
+  async function loadRevenueRules() {
+    try {
+      const { data, error } = await supabase
+        .from("platform_settings")
+        .select("setting_value")
+        .eq("setting_key", "revenue_rules")
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data?.setting_value) {
+        setRules(toRules(data.setting_value));
+      } else {
+        setRules(DEFAULT_RULES);
+      }
+    } catch {
+      setRules(DEFAULT_RULES);
+    } finally {
+      setRulesLoaded(true);
+    }
+  }
+
+  async function loadUsedFreeLiveListings(currentLandlordId: string) {
+    try {
+      const { count, error } = await supabase
+        .from("properties")
+        .select("id", { count: "exact", head: true })
+        .eq("owner_landlord_id", currentLandlordId)
+        .in("status", ["approved", "live"]);
+
+      if (error) throw error;
+      setUsedFreeLiveListings(Number(count ?? 0));
+    } catch {
+      setUsedFreeLiveListings(0);
+    }
   }
 
   async function init() {
@@ -303,6 +475,9 @@ export default function LandlordCreatePropertyPage() {
 
       setLandlordId(landlord.id);
       setLandlordProfileMissing(false);
+
+      await Promise.all([loadRevenueRules(), loadUsedFreeLiveListings(landlord.id)]);
+
       setLoading(false);
     } catch (e: any) {
       setLoading(false);
@@ -403,7 +578,7 @@ export default function LandlordCreatePropertyPage() {
     <PageShell>
       <SectionCard
         title={<h1 className="text-2xl font-semibold tracking-tight text-[#0b1f2a] md:text-3xl">Create Property</h1>}
-        subtitle="Add your listing details, save as draft, then submit for review. Inspection fees are set internally by Keyvera after review."
+        subtitle="Create your draft, then submit for review. Going live in the marketplace follows Keyvera’s listing activation rules."
         right={
           <div className="flex flex-wrap items-center gap-2">
             <GhostButton onClick={() => router.push("/landlord/properties")} disabled={isBusy}>
@@ -419,6 +594,23 @@ export default function LandlordCreatePropertyPage() {
           </StatPill>
           {userEmail ? <StatPill>Logged in as {userEmail}</StatPill> : null}
           {propertyId ? <StatPill>Draft ID: {propertyId}</StatPill> : null}
+        </div>
+
+        <div className="mb-6 grid gap-3 md:grid-cols-4">
+          <MetricCard label="Listing activation" value={formatNgn(listingActivationFee)} tone="navy" />
+          <MetricCard label="Featured boost" value={formatNgn(featuredBoostFee)} tone="teal" />
+          <MetricCard label="Free live slots left" value={String(freeListingsRemaining)} tone="amber" />
+          <MetricCard label="Rules status" value={rulesLoaded ? "Live" : "Loading"} tone="neutral" />
+        </div>
+
+        <div className="mb-5">
+          <Message tone="info">{listingRuleMessage}</Message>
+        </div>
+
+        <div className="mb-5">
+          <Message tone="warn">
+            Submitting for review does not automatically make this listing live. Admin review, fee validation, and live marketplace activation still happen afterward.
+          </Message>
         </div>
 
         {pageError ? (
@@ -567,6 +759,10 @@ export default function LandlordCreatePropertyPage() {
             <GhostButton onClick={submitForReview} disabled={!canSubmit}>
               {savingAction === "submit" ? "Submitting..." : "Submit for Review"}
             </GhostButton>
+          </div>
+
+          <div className="rounded-[22px] border border-black/10 bg-white/80 p-4 text-sm text-black/60">
+            Drafts are free. Review submission is free. Marketplace activation happens later and follows the current landlord pricing rules.
           </div>
 
           {loading ? <p className="text-sm text-black/60">Loading…</p> : null}
