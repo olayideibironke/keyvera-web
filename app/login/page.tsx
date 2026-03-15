@@ -62,43 +62,25 @@ function getMetadataRole(user: any): RoleType {
 
 function getBaseSiteUrl() {
   const envSiteUrl = normalizeOriginCandidate(process.env.NEXT_PUBLIC_SITE_URL);
+  if (envSiteUrl) return envSiteUrl;
+
   const envVercelUrl = normalizeOriginCandidate(process.env.NEXT_PUBLIC_VERCEL_URL);
+  if (envVercelUrl) {
+    try {
+      const envHost = new URL(envVercelUrl).hostname;
+      if (!isLocalHostname(envHost)) return envVercelUrl;
+    } catch {}
+  }
 
   if (typeof window !== "undefined") {
     const currentOrigin = normalizeOriginCandidate(window.location.origin);
-    const currentHost = String(window.location.hostname || "").trim();
-    const currentIsLocal = isLocalHostname(currentHost);
-
-    if (currentIsLocal) {
-      if (envSiteUrl) {
-        try {
-          const envHost = new URL(envSiteUrl).hostname;
-          if (isLocalHostname(envHost)) return envSiteUrl;
-        } catch {}
-      }
-
-      return currentOrigin || "http://localhost:3000";
-    }
-
-    if (envSiteUrl) {
+    if (currentOrigin) {
       try {
-        const envHost = new URL(envSiteUrl).hostname;
-        if (!isLocalHostname(envHost)) return envSiteUrl;
+        const currentHost = new URL(currentOrigin).hostname;
+        if (!isLocalHostname(currentHost)) return currentOrigin;
       } catch {}
     }
-
-    if (envVercelUrl) {
-      try {
-        const envHost = new URL(envVercelUrl).hostname;
-        if (!isLocalHostname(envHost)) return envVercelUrl;
-      } catch {}
-    }
-
-    if (currentOrigin) return currentOrigin;
   }
-
-  if (envSiteUrl) return envSiteUrl;
-  if (envVercelUrl) return envVercelUrl;
 
   return "https://keyvera.org";
 }
