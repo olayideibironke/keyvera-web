@@ -55,6 +55,9 @@ type ImagePreviewMode = null | {
   submitted_at: string | null;
 };
 
+type StatusFilter = "all" | "pending" | "verified" | "rejected";
+type AccountFilter = "all" | "active" | "disabled";
+
 function BadgeIcon({ size = 44 }: { size?: number }) {
   return (
     <div
@@ -107,6 +110,14 @@ function hasBackImage(path: string | null | undefined) {
   return !!String(path || "").trim();
 }
 
+function hasLicenseNumber(value: string | null | undefined) {
+  return !!String(value || "").trim();
+}
+
+function hasRequiredKycEvidence(row: AgentRow) {
+  return hasLicenseNumber(row.license_number) && hasFrontImage(row.kyc_id_front_image_path) && hasBackImage(row.kyc_id_back_image_path);
+}
+
 function getImageFileName(path: string | null | undefined) {
   const raw = String(path || "").trim();
   if (!raw) return "";
@@ -116,6 +127,13 @@ function getImageFileName(path: string | null | undefined) {
 
 function getSubmittedAt(row: AgentRow) {
   return row.kyc_submitted_at || row.created_at;
+}
+
+function getQueueSortRank(status: AgentRow["kyc_status"]) {
+  if (status === "pending") return 0;
+  if (status === "verified") return 1;
+  if (status === "rejected") return 2;
+  return 3;
 }
 
 async function getActorUserIdOrRedirect(router: ReturnType<typeof useRouter>) {
@@ -259,6 +277,10 @@ export default function AdminAgentsPage() {
   const [previewBackUrl, setPreviewBackUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewErr, setPreviewErr] = useState<string | null>(null);
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
+  const [accountFilter, setAccountFilter] = useState<AccountFilter>("all");
 
   const load = async () => {
     setLoading(true);
@@ -712,12 +734,51 @@ export default function AdminAgentsPage() {
   const verifiedCount = rows.filter((r) => r.kyc_status === "verified").length;
   const rejectedCount = rows.filter((r) => r.kyc_status === "rejected").length;
 
+  const filteredRows = useMemo(() => {
+    const needle = searchTerm.trim().toLowerCase();
+
+    const filtered = rows.filter((r) => {
+      if (statusFilter !== "all" && r.kyc_status !== statusFilter) return false;
+
+      const account = String(profiles[r.user_id]?.account_status || "active").toLowerCase();
+      if (accountFilter !== "all" && account !== accountFilter) return false;
+
+      if (!needle) return true;
+
+      const fullName = String(profiles[r.user_id]?.full_name || "").toLowerCase();
+      const userId = String(r.user_id || "").toLowerCase();
+      const agentId = String(r.id || "").toLowerCase();
+      const licenseNumber = String(r.license_number || "").toLowerCase();
+
+      return (
+        fullName.includes(needle) ||
+        userId.includes(needle) ||
+        agentId.includes(needle) ||
+        licenseNumber.includes(needle)
+      );
+    });
+
+    return [...filtered].sort((a, b) => {
+      const rankDiff = getQueueSortRank(a.kyc_status) - getQueueSortRank(b.kyc_status);
+      if (rankDiff !== 0) return rankDiff;
+
+      const aTime = new Date(getSubmittedAt(a)).getTime();
+      const bTime = new Date(getSubmittedAt(b)).getTime();
+      const safeATime = Number.isNaN(aTime) ? 0 : aTime;
+      const safeBTime = Number.isNaN(bTime) ? 0 : bTime;
+
+      return safeBTime - safeATime;
+    });
+  }, [rows, profiles, searchTerm, statusFilter, accountFilter]);
+
   const summary = useMemo(() => {
     if (loading) return { label: "Loading…", tone: "text-black/60" as const };
     if (errorMsg) return { label: "Attention needed", tone: "text-red-700" as const };
     if (pendingCount === 0) return { label: "No pending KYC", tone: "text-black/60" as const };
     return { label: `${pendingCount} pending review`, tone: "text-[#0a4f63]" as const };
   }, [loading, errorMsg, pendingCount]);
+
+  const visibleCount = filteredRows.length;
 
   return (
     <main className="min-h-[calc(100vh-120px)]">
@@ -813,12 +874,77 @@ export default function AdminAgentsPage() {
         title={
           <>
             <div className="text-sm font-semibold text-[#0b1f2a]">KYC Review Queue</div>
-            <SectionBadge>{rows.length}</SectionBadge>
+            <SectionBadge>{visibleCount}</SectionBadge>
           </>
         }
         subtitle="Pending, verified, and rejected agent KYC records. Review front and back ID evidence before approval."
-        right={<div className="text-xs text-black/50">Trust-first review workspace</div>}
+        right={<div className="text-xs text-black/50">Showing {visibleCount} of {rows.length}</div>}
       >
+        <div className="border-b border-black/10 p-4 md:p-5">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_220px]">
+            <div>
+              <div className="text-[11px] font-medium text-black/50">Search</div>
+              <input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search by agent name, user ID, agent ID, or government ID number…"
+                className="mt-1 w-full rounded-2xl border border-black/10 bg-white/80 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.40)] focus:ring-4 focus:ring-[rgba(14,165,163,0.12)]"
+              />
+            </div>
+
+            <div>
+              <div className="text-[11px] font-medium text-black/50">KYC status</div>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                className="mt-1 w-full rounded-2xl border border-black/10 bg-white/80 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.40)] focus:ring-4 focus:ring-[rgba(14,165,163,0.12)]"
+              >
+                <option value="all">All statuses</option>
+                <option value="pending">Pending only</option>
+                <option value="verified">Verified only</option>
+                <option value="rejected">Rejected only</option>
+              </select>
+            </div>
+
+            <div>
+              <div className="text-[11px] font-medium text-black/50">Account status</div>
+              <select
+                value={accountFilter}
+                onChange={(e) => setAccountFilter(e.target.value as AccountFilter)}
+                className="mt-1 w-full rounded-2xl border border-black/10 bg-white/80 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.40)] focus:ring-4 focus:ring-[rgba(14,165,163,0.12)]"
+              >
+                <option value="all">All accounts</option>
+                <option value="active">Active only</option>
+                <option value="disabled">Disabled only</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setStatusFilter("pending")}
+              className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${
+                statusFilter === "pending"
+                  ? "border-[rgba(14,165,163,0.25)] bg-[rgba(14,165,163,0.10)] text-[#0a4f63]"
+                  : "border-black/10 bg-white/70 text-black/60 hover:bg-white"
+              }`}
+            >
+              Pending first
+            </button>
+
+            <button
+              onClick={() => {
+                setStatusFilter("all");
+                setAccountFilter("all");
+                setSearchTerm("");
+              }}
+              className="rounded-full border border-black/10 bg-white/70 px-3 py-1.5 text-[11px] font-semibold text-black/60 transition hover:bg-white"
+            >
+              Clear filters
+            </button>
+          </div>
+        </div>
+
         {loading ? (
           <div className="p-6 text-sm text-black/60">Loading…</div>
         ) : rows.length === 0 ? (
@@ -826,11 +952,16 @@ export default function AdminAgentsPage() {
             title="No agent KYC records."
             body="When agents submit or move through KYC, they’ll appear here."
           />
+        ) : filteredRows.length === 0 ? (
+          <EmptyState
+            title="No matching KYC records."
+            body="Try clearing the search or changing the current filters."
+          />
         ) : (
           <>
             <div className="hidden xl:block">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1440px] text-left text-sm">
+                <table className="w-full min-w-[1500px] text-left text-sm">
                   <thead className="bg-gradient-to-b from-black/5 to-black/0">
                     <tr>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Agent</th>
@@ -845,11 +976,12 @@ export default function AdminAgentsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((r) => {
+                    {filteredRows.map((r) => {
                       const busy = busyId === r.id;
                       const p = profiles[r.user_id];
                       const account = (p?.account_status || "active").toLowerCase();
                       const isDisabled = account === "disabled";
+                      const canApprove = hasRequiredKycEvidence(r);
 
                       return (
                         <tr key={r.id} className="border-t border-black/5 align-top">
@@ -876,7 +1008,20 @@ export default function AdminAgentsPage() {
                             <span className={statusPill(account)}>{account}</span>
                           </td>
 
-                          <td className="px-5 py-5 text-[#0b1f2a]">{r.license_number ?? "—"}</td>
+                          <td className="px-5 py-5">
+                            <div className="text-[#0b1f2a]">{r.license_number ?? "—"}</div>
+                            <div className="mt-2">
+                              <span
+                                className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                                  canApprove
+                                    ? "border-[rgba(14,165,163,0.20)] bg-[rgba(14,165,163,0.08)] text-[#0a4f63]"
+                                    : "border-red-200 bg-red-50 text-red-700"
+                                }`}
+                              >
+                                {canApprove ? "Review-ready" : "Incomplete evidence"}
+                              </span>
+                            </div>
+                          </td>
 
                           <td className="px-5 py-5">
                             {hasFrontImage(r.kyc_id_front_image_path) ? (
@@ -919,14 +1064,15 @@ export default function AdminAgentsPage() {
                                 <>
                                   <button
                                     onClick={() => openReview("approve_kyc", r)}
-                                    disabled={busy}
+                                    disabled={busy || !canApprove}
+                                    title={!canApprove ? "Government ID number, front image, and back image are required before approval." : undefined}
                                     className={`rounded-2xl px-4 py-2.5 text-xs font-semibold transition ${
-                                      busy
+                                      busy || !canApprove
                                         ? "cursor-not-allowed border border-black/10 bg-white/70 text-black/40"
                                         : "bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] text-white shadow-[0_14px_34px_rgba(10,79,99,0.22)] hover:shadow-[0_18px_44px_rgba(10,79,99,0.30)]"
                                     }`}
                                   >
-                                    {busy ? "Working…" : "Approve KYC"}
+                                    {busy ? "Working…" : !canApprove ? "Missing Evidence" : "Approve KYC"}
                                   </button>
 
                                   <button
@@ -979,11 +1125,12 @@ export default function AdminAgentsPage() {
             </div>
 
             <div className="grid gap-4 p-4 md:p-5 xl:hidden">
-              {rows.map((r) => {
+              {filteredRows.map((r) => {
                 const busy = busyId === r.id;
                 const p = profiles[r.user_id];
                 const account = (p?.account_status || "active").toLowerCase();
                 const isDisabled = account === "disabled";
+                const canApprove = hasRequiredKycEvidence(r);
 
                 return (
                   <article
@@ -1031,7 +1178,22 @@ export default function AdminAgentsPage() {
                         </div>
                       </div>
 
-                      <div className="sm:col-span-2">
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Evidence</div>
+                        <div className="mt-1">
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                              canApprove
+                                ? "border-[rgba(14,165,163,0.20)] bg-[rgba(14,165,163,0.08)] text-[#0a4f63]"
+                                : "border-red-200 bg-red-50 text-red-700"
+                            }`}
+                          >
+                            {canApprove ? "Review-ready" : "Incomplete evidence"}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div>
                         <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Submitted</div>
                         <div className="mt-1 text-sm text-black/60">{fmtDate(getSubmittedAt(r))}</div>
                       </div>
@@ -1049,14 +1211,15 @@ export default function AdminAgentsPage() {
                         <>
                           <button
                             onClick={() => openReview("approve_kyc", r)}
-                            disabled={busy}
+                            disabled={busy || !canApprove}
+                            title={!canApprove ? "Government ID number, front image, and back image are required before approval." : undefined}
                             className={`rounded-2xl px-4 py-3 text-xs font-semibold transition ${
-                              busy
+                              busy || !canApprove
                                 ? "cursor-not-allowed border border-black/10 bg-white/70 text-black/40"
                                 : "bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] text-white shadow-[0_14px_34px_rgba(10,79,99,0.22)] hover:shadow-[0_18px_44px_rgba(10,79,99,0.30)]"
                             }`}
                           >
-                            {busy ? "Working…" : "Approve KYC"}
+                            {busy ? "Working…" : !canApprove ? "Missing Evidence" : "Approve KYC"}
                           </button>
 
                           <button
