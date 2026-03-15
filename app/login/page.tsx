@@ -5,6 +5,25 @@ import { supabase } from "@/lib/supabase";
 import { useRouter, useSearchParams } from "next/navigation";
 
 type RoleType = "admin" | "landlord" | "agent" | "tenant" | null;
+type AuthMode = "login" | "signup";
+
+function isLocalHostname(hostname: string) {
+  const host = String(hostname || "").toLowerCase().trim();
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+function normalizeOriginCandidate(raw: string | null | undefined) {
+  const value = String(raw || "").trim();
+  if (!value) return null;
+
+  try {
+    const withProtocol = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+    const url = new URL(withProtocol);
+    return url.origin.replace(/\/+$/, "");
+  } catch {
+    return null;
+  }
+}
 
 function getRoleFromNext(next: string): RoleType {
   const v = String(next || "").toLowerCase();
@@ -19,7 +38,11 @@ function getRoleFromNext(next: string): RoleType {
 
 function getSafeNext(next: string | null) {
   const raw = String(next || "").trim();
+  if (!raw) return "/";
   if (!raw.startsWith("/")) return "/";
+  if (raw.startsWith("//")) return "/";
+  if (raw.startsWith("/login")) return "/";
+  if (raw.startsWith("/auth/confirm")) return "/";
   return raw;
 }
 
@@ -38,18 +61,44 @@ function getMetadataRole(user: any): RoleType {
 }
 
 function getBaseSiteUrl() {
-  const envUrl = String(process.env.NEXT_PUBLIC_SITE_URL || "").trim();
-
-  if (envUrl) {
-    return envUrl.replace(/\/+$/, "");
-  }
+  const envSiteUrl = normalizeOriginCandidate(process.env.NEXT_PUBLIC_SITE_URL);
+  const envVercelUrl = normalizeOriginCandidate(process.env.NEXT_PUBLIC_VERCEL_URL);
 
   if (typeof window !== "undefined") {
-    const origin = String(window.location.origin || "").trim();
-    if (origin) {
-      return origin.replace(/\/+$/, "");
+    const currentOrigin = normalizeOriginCandidate(window.location.origin);
+    const currentHost = String(window.location.hostname || "").trim();
+    const currentIsLocal = isLocalHostname(currentHost);
+
+    if (currentIsLocal) {
+      if (envSiteUrl) {
+        try {
+          const envHost = new URL(envSiteUrl).hostname;
+          if (isLocalHostname(envHost)) return envSiteUrl;
+        } catch {}
+      }
+
+      return currentOrigin || "http://localhost:3000";
     }
+
+    if (envSiteUrl) {
+      try {
+        const envHost = new URL(envSiteUrl).hostname;
+        if (!isLocalHostname(envHost)) return envSiteUrl;
+      } catch {}
+    }
+
+    if (envVercelUrl) {
+      try {
+        const envHost = new URL(envVercelUrl).hostname;
+        if (!isLocalHostname(envHost)) return envVercelUrl;
+      } catch {}
+    }
+
+    if (currentOrigin) return currentOrigin;
   }
+
+  if (envSiteUrl) return envSiteUrl;
+  if (envVercelUrl) return envVercelUrl;
 
   return "https://keyvera.org";
 }
@@ -64,12 +113,13 @@ function LoginPageContent() {
   const safeNext = useMemo(() => getSafeNext(nextParam), [nextParam]);
   const inferredRole = useMemo(() => getRoleFromNext(safeNext), [safeNext]);
 
-  const [mode, setMode] = useState<"login" | "signup">(modeParam === "signup" ? "signup" : "login");
+  const [mode, setMode] = useState<AuthMode>(modeParam === "signup" ? "signup" : "login");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
+  const [bootChecking, setBootChecking] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
@@ -78,14 +128,14 @@ function LoginPageContent() {
   }, [modeParam]);
 
   async function getProfileRole(userId: string): Promise<RoleType> {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("user_id", userId)
-      .maybeSingle();
+    const { data, error } = await supabase.from("profiles").select("role").eq("user_id", userId).maybeSingle();
 
     if (error) throw new Error(error.message);
-    return (data?.role as RoleType) ?? null;
+
+    const role = data?.role ?? null;
+    if (role === "admin" || role === "landlord" || role === "agent" || role === "tenant") return role;
+
+    return null;
   }
 
   async function ensureRoleRecords(params: {
@@ -95,6 +145,7 @@ function LoginPageContent() {
     forceRole?: boolean;
   }) {
     const { userId, role, fullNameValue, forceRole = false } = params;
+    if (!role) return;
 
     const cleanName = fullNameValue.trim();
 
@@ -126,10 +177,7 @@ function LoginPageContent() {
       }
 
       if (Object.keys(updatePayload).length > 0) {
-        const { error: updateErr } = await supabase
-          .from("profiles")
-          .update(updatePayload)
-          .eq("user_id", userId);
+        const { error: updateErr } = await supabase.from("profiles").update(updatePayload).eq("user_id", userId);
 
         if (updateErr) throw new Error(updateErr.message);
       }
@@ -184,7 +232,7 @@ function LoginPageContent() {
 
     const metadataRole = getMetadataRole(user);
     const profileRoleBefore = await getProfileRole(userId);
-    const resolvedRole = fallbackRole || metadataRole || profileRoleBefore || null;
+    const resolvedRole = profileRoleBefore || metadataRole || fallbackRole || null;
 
     if (resolvedRole) {
       await ensureRoleRecords({
@@ -199,34 +247,66 @@ function LoginPageContent() {
     return profileRoleAfter || resolvedRole || null;
   }
 
-  function goAfterAuth(role: RoleType, fallbackNext: string) {
-    if (role === "admin") {
-      router.push("/admin");
-      return;
+  function getPostAuthTarget(role: RoleType, fallbackNext: string) {
+    const roleHome = getRoleHome(role);
+
+    if (role && fallbackNext !== "/" && getRoleFromNext(fallbackNext) === role) {
+      return fallbackNext;
     }
 
-    if (role === "landlord") {
-      router.push("/landlord");
-      return;
-    }
-
-    if (role === "agent") {
-      router.push("/agent");
-      return;
-    }
-
-    if (role === "tenant") {
-      router.push("/tenant");
-      return;
+    if (roleHome !== "/") {
+      return roleHome;
     }
 
     if (fallbackNext && fallbackNext !== "/") {
-      router.push(fallbackNext);
-      return;
+      return fallbackNext;
     }
 
-    router.push("/");
+    return "/";
   }
+
+  function goAfterAuth(role: RoleType, fallbackNext: string) {
+    router.replace(getPostAuthTarget(role, fallbackNext));
+  }
+
+  useEffect(() => {
+    let active = true;
+
+    async function bootstrapSession() {
+      try {
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession();
+
+        if (error) throw error;
+        if (!active) return;
+
+        if (!session?.user) {
+          setBootChecking(false);
+          return;
+        }
+
+        const finalRole = await reconcileAndResolveRole({
+          user: session.user,
+          fullNameValue: "",
+          fallbackRole: inferredRole,
+        });
+
+        if (!active) return;
+        goAfterAuth(finalRole, safeNext);
+      } catch {
+        if (!active) return;
+        setBootChecking(false);
+      }
+    }
+
+    bootstrapSession();
+
+    return () => {
+      active = false;
+    };
+  }, [inferredRole, safeNext]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -255,7 +335,7 @@ function LoginPageContent() {
 
       const finalRole = await reconcileAndResolveRole({
         user,
-        fullNameValue: fullName,
+        fullNameValue: "",
         fallbackRole: inferredRole,
       });
 
@@ -348,6 +428,10 @@ function LoginPageContent() {
         ? "Create your admin account to access the control workspace."
         : "Create your Keyvera account."
       : "Sign in to continue.";
+
+  if (bootChecking) {
+    return <LoginPageFallback />;
+  }
 
   return (
     <main className="min-h-screen bg-gray-100">
