@@ -11,8 +11,10 @@ type AgentRow = {
   user_id: string;
   kyc_status: "unsubmitted" | "pending" | "verified" | "rejected";
   license_number: string | null;
-  kyc_id_image_path: string | null;
-  kyc_id_image_uploaded_at: string | null;
+  kyc_id_front_image_path: string | null;
+  kyc_id_front_image_uploaded_at: string | null;
+  kyc_id_back_image_path: string | null;
+  kyc_id_back_image_uploaded_at: string | null;
   kyc_submitted_at: string | null;
   created_at: string;
 };
@@ -36,16 +38,21 @@ type ReviewMode = null | {
   user_id: string;
   agent_label: string;
   license_number: string | null;
-  kyc_id_image_path: string | null;
-  kyc_id_image_uploaded_at: string | null;
+  kyc_id_front_image_path: string | null;
+  kyc_id_front_image_uploaded_at: string | null;
+  kyc_id_back_image_path: string | null;
+  kyc_id_back_image_uploaded_at: string | null;
   kyc_submitted_at: string | null;
 };
 
 type ImagePreviewMode = null | {
   agent_label: string;
   license_number: string | null;
-  image_path: string;
-  uploaded_at: string | null;
+  front_path: string | null;
+  front_uploaded_at: string | null;
+  back_path: string | null;
+  back_uploaded_at: string | null;
+  submitted_at: string | null;
 };
 
 function BadgeIcon({ size = 44 }: { size?: number }) {
@@ -70,21 +77,6 @@ function fmtDate(x: string | null | undefined) {
   return d.toLocaleString();
 }
 
-function getSubmittedAt(row: AgentRow) {
-  return row.kyc_submitted_at || row.created_at;
-}
-
-function hasKycImage(path: string | null | undefined) {
-  return !!String(path || "").trim();
-}
-
-function getKycImageFileName(path: string | null | undefined) {
-  const raw = String(path || "").trim();
-  if (!raw) return "";
-  const parts = raw.split("/");
-  return parts[parts.length - 1] || raw;
-}
-
 function statusPill(status: string | null | undefined) {
   const s = String(status || "").toLowerCase();
   const base = "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold";
@@ -105,6 +97,25 @@ function kycPill(status: AgentRow["kyc_status"]) {
     return `${base} border-red-200 bg-red-50 text-red-700`;
   }
   return `${base} border-black/10 bg-white/70 text-black/60`;
+}
+
+function hasFrontImage(path: string | null | undefined) {
+  return !!String(path || "").trim();
+}
+
+function hasBackImage(path: string | null | undefined) {
+  return !!String(path || "").trim();
+}
+
+function getImageFileName(path: string | null | undefined) {
+  const raw = String(path || "").trim();
+  if (!raw) return "";
+  const parts = raw.split("/");
+  return parts[parts.length - 1] || raw;
+}
+
+function getSubmittedAt(row: AgentRow) {
+  return row.kyc_submitted_at || row.created_at;
 }
 
 async function getActorUserIdOrRedirect(router: ReturnType<typeof useRouter>) {
@@ -143,12 +154,11 @@ async function logAudit(payload: {
   if (error) throw error;
 }
 
-async function createKycSignedUrl(path: string) {
+async function createSignedImageUrl(path: string) {
   const { data, error } = await supabase.storage.from("agent-kyc").createSignedUrl(path, 60 * 60);
 
   if (error) throw error;
   if (!data?.signedUrl) throw new Error("Signed image URL could not be created.");
-
   return data.signedUrl;
 }
 
@@ -240,13 +250,15 @@ export default function AdminAgentsPage() {
   const [checkIdentityMatch, setCheckIdentityMatch] = useState(false);
   const [checkFraudReview, setCheckFraudReview] = useState(false);
 
-  const [reviewImageUrl, setReviewImageUrl] = useState<string | null>(null);
+  const [reviewFrontUrl, setReviewFrontUrl] = useState<string | null>(null);
+  const [reviewBackUrl, setReviewBackUrl] = useState<string | null>(null);
   const [reviewImageLoading, setReviewImageLoading] = useState(false);
   const [reviewImageErr, setReviewImageErr] = useState<string | null>(null);
 
-  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
-  const [imagePreviewLoading, setImagePreviewLoading] = useState(false);
-  const [imagePreviewErr, setImagePreviewErr] = useState<string | null>(null);
+  const [previewFrontUrl, setPreviewFrontUrl] = useState<string | null>(null);
+  const [previewBackUrl, setPreviewBackUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewErr, setPreviewErr] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -263,7 +275,7 @@ export default function AdminAgentsPage() {
       const { data, error } = await supabase
         .from("agents")
         .select(
-          "id,user_id,kyc_status,license_number,kyc_id_image_path,kyc_id_image_uploaded_at,kyc_submitted_at,created_at"
+          "id,user_id,kyc_status,license_number,kyc_id_front_image_path,kyc_id_front_image_uploaded_at,kyc_id_back_image_path,kyc_id_back_image_uploaded_at,kyc_submitted_at,created_at"
         )
         .in("kyc_status", ["pending", "verified", "rejected"])
         .order("created_at", { ascending: true });
@@ -311,9 +323,10 @@ export default function AdminAgentsPage() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadReviewImage() {
-      if (!review?.kyc_id_image_path) {
-        setReviewImageUrl(null);
+    async function loadReviewImages() {
+      if (!review) {
+        setReviewFrontUrl(null);
+        setReviewBackUrl(null);
         setReviewImageErr(null);
         setReviewImageLoading(false);
         return;
@@ -321,16 +334,27 @@ export default function AdminAgentsPage() {
 
       setReviewImageLoading(true);
       setReviewImageErr(null);
-      setReviewImageUrl(null);
+      setReviewFrontUrl(null);
+      setReviewBackUrl(null);
 
       try {
-        const signedUrl = await createKycSignedUrl(review.kyc_id_image_path);
+        const frontPromise = review.kyc_id_front_image_path
+          ? createSignedImageUrl(review.kyc_id_front_image_path)
+          : Promise.resolve(null);
+
+        const backPromise = review.kyc_id_back_image_path
+          ? createSignedImageUrl(review.kyc_id_back_image_path)
+          : Promise.resolve(null);
+
+        const [frontUrl, backUrl] = await Promise.all([frontPromise, backPromise]);
+
         if (!cancelled) {
-          setReviewImageUrl(signedUrl);
+          setReviewFrontUrl(frontUrl);
+          setReviewBackUrl(backUrl);
         }
       } catch (e: any) {
         if (!cancelled) {
-          setReviewImageErr(e?.message ?? "Failed to load government ID image.");
+          setReviewImageErr(e?.message ?? "Failed to load government ID images.");
         }
       } finally {
         if (!cancelled) {
@@ -339,50 +363,62 @@ export default function AdminAgentsPage() {
       }
     }
 
-    loadReviewImage();
+    loadReviewImages();
 
     return () => {
       cancelled = true;
     };
-  }, [review?.kyc_id_image_path]);
+  }, [review]);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadPreviewImage() {
-      if (!imagePreview?.image_path) {
-        setImagePreviewUrl(null);
-        setImagePreviewErr(null);
-        setImagePreviewLoading(false);
+    async function loadPreviewImages() {
+      if (!imagePreview) {
+        setPreviewFrontUrl(null);
+        setPreviewBackUrl(null);
+        setPreviewErr(null);
+        setPreviewLoading(false);
         return;
       }
 
-      setImagePreviewLoading(true);
-      setImagePreviewErr(null);
-      setImagePreviewUrl(null);
+      setPreviewLoading(true);
+      setPreviewErr(null);
+      setPreviewFrontUrl(null);
+      setPreviewBackUrl(null);
 
       try {
-        const signedUrl = await createKycSignedUrl(imagePreview.image_path);
+        const frontPromise = imagePreview.front_path
+          ? createSignedImageUrl(imagePreview.front_path)
+          : Promise.resolve(null);
+
+        const backPromise = imagePreview.back_path
+          ? createSignedImageUrl(imagePreview.back_path)
+          : Promise.resolve(null);
+
+        const [frontUrl, backUrl] = await Promise.all([frontPromise, backPromise]);
+
         if (!cancelled) {
-          setImagePreviewUrl(signedUrl);
+          setPreviewFrontUrl(frontUrl);
+          setPreviewBackUrl(backUrl);
         }
       } catch (e: any) {
         if (!cancelled) {
-          setImagePreviewErr(e?.message ?? "Failed to load government ID image.");
+          setPreviewErr(e?.message ?? "Failed to load government ID images.");
         }
       } finally {
         if (!cancelled) {
-          setImagePreviewLoading(false);
+          setPreviewLoading(false);
         }
       }
     }
 
-    loadPreviewImage();
+    loadPreviewImages();
 
     return () => {
       cancelled = true;
     };
-  }, [imagePreview?.image_path]);
+  }, [imagePreview]);
 
   async function fetchProfileSnapshot(userId: string) {
     const { data, error } = await supabase
@@ -399,7 +435,7 @@ export default function AdminAgentsPage() {
     const { data, error } = await supabase
       .from("agents")
       .select(
-        "id,user_id,kyc_status,license_number,kyc_id_image_path,kyc_id_image_uploaded_at,kyc_submitted_at,created_at"
+        "id,user_id,kyc_status,license_number,kyc_id_front_image_path,kyc_id_front_image_uploaded_at,kyc_id_back_image_path,kyc_id_back_image_uploaded_at,kyc_submitted_at,created_at"
       )
       .eq("id", agentId)
       .maybeSingle();
@@ -415,7 +451,8 @@ export default function AdminAgentsPage() {
     setCheckNotExpired(false);
     setCheckIdentityMatch(false);
     setCheckFraudReview(false);
-    setReviewImageUrl(null);
+    setReviewFrontUrl(null);
+    setReviewBackUrl(null);
     setReviewImageErr(null);
     setReviewImageLoading(false);
   }
@@ -433,8 +470,10 @@ export default function AdminAgentsPage() {
       user_id: row.user_id,
       agent_label: `${label} • ${shortId(row.user_id)}`,
       license_number: row.license_number,
-      kyc_id_image_path: row.kyc_id_image_path,
-      kyc_id_image_uploaded_at: row.kyc_id_image_uploaded_at,
+      kyc_id_front_image_path: row.kyc_id_front_image_path,
+      kyc_id_front_image_uploaded_at: row.kyc_id_front_image_uploaded_at,
+      kyc_id_back_image_path: row.kyc_id_back_image_path,
+      kyc_id_back_image_uploaded_at: row.kyc_id_back_image_uploaded_at,
       kyc_submitted_at: row.kyc_submitted_at,
     });
   };
@@ -446,26 +485,30 @@ export default function AdminAgentsPage() {
   };
 
   const openImagePreview = (row: AgentRow) => {
-    if (!row.kyc_id_image_path) return;
-
     const p = profiles[row.user_id];
     const label = p?.full_name?.trim() || "Agent";
 
-    setImagePreviewErr(null);
-    setImagePreviewUrl(null);
+    setPreviewFrontUrl(null);
+    setPreviewBackUrl(null);
+    setPreviewErr(null);
+
     setImagePreview({
       agent_label: `${label} • ${shortId(row.user_id)}`,
       license_number: row.license_number,
-      image_path: row.kyc_id_image_path,
-      uploaded_at: row.kyc_id_image_uploaded_at || row.kyc_submitted_at || row.created_at,
+      front_path: row.kyc_id_front_image_path,
+      front_uploaded_at: row.kyc_id_front_image_uploaded_at,
+      back_path: row.kyc_id_back_image_path,
+      back_uploaded_at: row.kyc_id_back_image_uploaded_at,
+      submitted_at: getSubmittedAt(row),
     });
   };
 
   const closeImagePreview = () => {
     setImagePreview(null);
-    setImagePreviewUrl(null);
-    setImagePreviewErr(null);
-    setImagePreviewLoading(false);
+    setPreviewFrontUrl(null);
+    setPreviewBackUrl(null);
+    setPreviewErr(null);
+    setPreviewLoading(false);
   };
 
   const updateKycStatus = async (
@@ -488,7 +531,7 @@ export default function AdminAgentsPage() {
         .update({ kyc_status: status })
         .eq("id", row.id)
         .select(
-          "id,user_id,kyc_status,license_number,kyc_id_image_path,kyc_id_image_uploaded_at,kyc_submitted_at,created_at"
+          "id,user_id,kyc_status,license_number,kyc_id_front_image_path,kyc_id_front_image_uploaded_at,kyc_id_back_image_path,kyc_id_back_image_uploaded_at,kyc_submitted_at,created_at"
         )
         .maybeSingle();
 
@@ -555,12 +598,17 @@ export default function AdminAgentsPage() {
 
     if (review.kind === "approve_kyc") {
       if (!String(review.license_number || "").trim()) {
-        setAuditErr("Cannot approve KYC without a government ID / license number in the current schema.");
+        setAuditErr("Cannot approve KYC without a government ID number.");
         return;
       }
 
-      if (!String(review.kyc_id_image_path || "").trim()) {
-        setAuditErr("Cannot approve KYC without an uploaded government ID image.");
+      if (!String(review.kyc_id_front_image_path || "").trim()) {
+        setAuditErr("Cannot approve KYC without the front ID image.");
+        return;
+      }
+
+      if (!String(review.kyc_id_back_image_path || "").trim()) {
+        setAuditErr("Cannot approve KYC without the back ID image.");
         return;
       }
 
@@ -571,7 +619,7 @@ export default function AdminAgentsPage() {
 
       const composedReason =
         `Approve agent KYC. ${cleanReason} | ` +
-        `Checks confirmed: government ID number reviewed, uploaded ID image reviewed, non-expired document confirmed, identity match reviewed, fraud review completed.`;
+        `Checks confirmed: government ID number reviewed, front ID image reviewed, back ID image reviewed, non-expired document confirmed, identity match reviewed, fraud review completed.`;
 
       const ok = await updateKycStatus(currentRow, "verified", composedReason);
       if (ok) {
@@ -731,12 +779,12 @@ export default function AdminAgentsPage() {
       <section className="mb-6 grid gap-4 md:grid-cols-3">
         <SmallRuleCard
           title="Core approval rule"
-          body="Only approve agents after reviewing the government ID number, the uploaded government ID image, document validity, identity consistency, and fraud-risk signals."
+          body="Only approve agents after reviewing the government ID number, front ID image, back ID image, document validity, identity consistency, and fraud-risk signals."
           tone="good"
         />
         <SmallRuleCard
-          title="Current schema limitation"
-          body="Government ID image upload is now collected, but true auto-expiry detection still needs expiry-date capture, selfie match, and stronger fraud tooling."
+          title="Current schema direction"
+          body="Front and back ID evidence are now the required KYC review standard. Future upgrades should add expiry-date capture, selfie match, and stronger fraud tooling."
           tone="warn"
         />
         <SmallRuleCard
@@ -768,7 +816,7 @@ export default function AdminAgentsPage() {
             <SectionBadge>{rows.length}</SectionBadge>
           </>
         }
-        subtitle="Pending, verified, and rejected agent KYC records. Review uploaded ID evidence before approval."
+        subtitle="Pending, verified, and rejected agent KYC records. Review front and back ID evidence before approval."
         right={<div className="text-xs text-black/50">Trust-first review workspace</div>}
       >
         {loading ? (
@@ -782,7 +830,7 @@ export default function AdminAgentsPage() {
           <>
             <div className="hidden xl:block">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1380px] text-left text-sm">
+                <table className="w-full min-w-[1440px] text-left text-sm">
                   <thead className="bg-gradient-to-b from-black/5 to-black/0">
                     <tr>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Agent</th>
@@ -790,7 +838,8 @@ export default function AdminAgentsPage() {
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">KYC</th>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Account</th>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Government ID</th>
-                      <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">ID Image</th>
+                      <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Front ID</th>
+                      <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Back ID</th>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Submitted</th>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60 text-right">Actions</th>
                     </tr>
@@ -801,7 +850,6 @@ export default function AdminAgentsPage() {
                       const p = profiles[r.user_id];
                       const account = (p?.account_status || "active").toLowerCase();
                       const isDisabled = account === "disabled";
-                      const hasImage = hasKycImage(r.kyc_id_image_path);
 
                       return (
                         <tr key={r.id} className="border-t border-black/5 align-top">
@@ -828,26 +876,31 @@ export default function AdminAgentsPage() {
                             <span className={statusPill(account)}>{account}</span>
                           </td>
 
+                          <td className="px-5 py-5 text-[#0b1f2a]">{r.license_number ?? "—"}</td>
+
                           <td className="px-5 py-5">
-                            <div className="text-[#0b1f2a]">{r.license_number ?? "—"}</div>
+                            {hasFrontImage(r.kyc_id_front_image_path) ? (
+                              <div className="space-y-2">
+                                <span className="inline-flex items-center rounded-full border border-[rgba(14,165,163,0.20)] bg-[rgba(14,165,163,0.08)] px-2.5 py-1 text-[11px] font-semibold text-[#0a4f63]">
+                                  Uploaded
+                                </span>
+                                <div className="text-xs text-black/50">{getImageFileName(r.kyc_id_front_image_path)}</div>
+                              </div>
+                            ) : (
+                              <div className="text-xs font-semibold text-red-700">Missing front</div>
+                            )}
                           </td>
 
                           <td className="px-5 py-5">
-                            {hasImage ? (
+                            {hasBackImage(r.kyc_id_back_image_path) ? (
                               <div className="space-y-2">
                                 <span className="inline-flex items-center rounded-full border border-[rgba(14,165,163,0.20)] bg-[rgba(14,165,163,0.08)] px-2.5 py-1 text-[11px] font-semibold text-[#0a4f63]">
-                                  Image uploaded
+                                  Uploaded
                                 </span>
-                                <div className="text-xs text-black/50">{getKycImageFileName(r.kyc_id_image_path)}</div>
-                                <button
-                                  onClick={() => openImagePreview(r)}
-                                  className="rounded-2xl border border-black/10 bg-white/80 px-3 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
-                                >
-                                  View ID
-                                </button>
+                                <div className="text-xs text-black/50">{getImageFileName(r.kyc_id_back_image_path)}</div>
                               </div>
                             ) : (
-                              <div className="text-xs font-semibold text-red-700">No image uploaded</div>
+                              <div className="text-xs font-semibold text-red-700">Missing back</div>
                             )}
                           </td>
 
@@ -855,6 +908,13 @@ export default function AdminAgentsPage() {
 
                           <td className="px-5 py-5">
                             <div className="flex flex-wrap justify-end gap-2">
+                              <button
+                                onClick={() => openImagePreview(r)}
+                                className="rounded-2xl border border-black/10 bg-white/80 px-4 py-2.5 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                              >
+                                View Images
+                              </button>
+
                               {r.kyc_status === "pending" ? (
                                 <>
                                   <button
@@ -924,7 +984,6 @@ export default function AdminAgentsPage() {
                 const p = profiles[r.user_id];
                 const account = (p?.account_status || "active").toLowerCase();
                 const isDisabled = account === "disabled";
-                const hasImage = hasKycImage(r.kyc_id_image_path);
 
                 return (
                   <article
@@ -959,29 +1018,33 @@ export default function AdminAgentsPage() {
                       </div>
 
                       <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">ID Image</div>
-                        {hasImage ? (
-                          <div className="mt-2 space-y-2">
-                            <div className="text-xs text-black/50">{getKycImageFileName(r.kyc_id_image_path)}</div>
-                            <button
-                              onClick={() => openImagePreview(r)}
-                              className="rounded-2xl border border-black/10 bg-white/80 px-3 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
-                            >
-                              View ID
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="mt-1 text-sm text-red-700">No image uploaded</div>
-                        )}
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Front ID</div>
+                        <div className="mt-1 text-sm text-black/60">
+                          {hasFrontImage(r.kyc_id_front_image_path) ? getImageFileName(r.kyc_id_front_image_path) : "Missing front"}
+                        </div>
                       </div>
 
                       <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Back ID</div>
+                        <div className="mt-1 text-sm text-black/60">
+                          {hasBackImage(r.kyc_id_back_image_path) ? getImageFileName(r.kyc_id_back_image_path) : "Missing back"}
+                        </div>
+                      </div>
+
+                      <div className="sm:col-span-2">
                         <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Submitted</div>
                         <div className="mt-1 text-sm text-black/60">{fmtDate(getSubmittedAt(r))}</div>
                       </div>
                     </div>
 
                     <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                      <button
+                        onClick={() => openImagePreview(r)}
+                        className="rounded-2xl border border-black/10 bg-white/80 px-4 py-3 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                      >
+                        View Images
+                      </button>
+
                       {r.kyc_status === "pending" ? (
                         <>
                           <button
@@ -1047,7 +1110,7 @@ export default function AdminAgentsPage() {
       {review ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={closeReview} />
-          <div className="relative w-full max-w-5xl rounded-[28px] border border-black/10 bg-white shadow-[0_26px_80px_rgba(11,31,42,0.24)]">
+          <div className="relative w-full max-w-6xl rounded-[28px] border border-black/10 bg-white shadow-[0_26px_80px_rgba(11,31,42,0.24)]">
             <div className="p-6">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -1075,61 +1138,95 @@ export default function AdminAgentsPage() {
                 </button>
               </div>
 
-              <div className="mt-5 grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-                <div className="rounded-[24px] border border-black/10 bg-white/80 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-[#0b1f2a]">Uploaded government ID image</div>
-                      <div className="mt-1 text-xs text-black/50">
-                        {review.kyc_id_image_path
-                          ? getKycImageFileName(review.kyc_id_image_path)
-                          : "No image uploaded"}
+              <div className="mt-5 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="rounded-[24px] border border-black/10 bg-white/80 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-[#0b1f2a]">Front ID image</div>
+                        <div className="mt-1 text-xs text-black/50">
+                          {review.kyc_id_front_image_path ? getImageFileName(review.kyc_id_front_image_path) : "No front image"}
+                        </div>
                       </div>
+                      {reviewFrontUrl ? (
+                        <a
+                          href={reviewFrontUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-2xl border border-black/10 bg-white/80 px-3 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                        >
+                          Open
+                        </a>
+                      ) : null}
                     </div>
 
-                    {reviewImageUrl ? (
-                      <a
-                        href={reviewImageUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded-2xl border border-black/10 bg-white/80 px-3 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
-                      >
-                        Open image
-                      </a>
-                    ) : null}
+                    <div className="mt-2 text-xs text-black/50">Uploaded: {fmtDate(review.kyc_id_front_image_uploaded_at)}</div>
+
+                    {reviewImageLoading ? (
+                      <div className="mt-4 rounded-2xl border border-black/10 bg-white/70 p-4 text-sm text-black/60">
+                        Loading images…
+                      </div>
+                    ) : reviewFrontUrl ? (
+                      <div className="mt-4 rounded-2xl border border-black/10 bg-black/[0.03] p-3">
+                        <img
+                          src={reviewFrontUrl}
+                          alt="Front ID"
+                          className="max-h-[420px] w-full rounded-2xl object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                        Front ID image missing.
+                      </div>
+                    )}
                   </div>
 
-                  {review.kyc_id_image_uploaded_at ? (
-                    <div className="mt-2 text-xs text-black/50">
-                      Uploaded at: {fmtDate(review.kyc_id_image_uploaded_at)}
+                  <div className="rounded-[24px] border border-black/10 bg-white/80 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-[#0b1f2a]">Back ID image</div>
+                        <div className="mt-1 text-xs text-black/50">
+                          {review.kyc_id_back_image_path ? getImageFileName(review.kyc_id_back_image_path) : "No back image"}
+                        </div>
+                      </div>
+                      {reviewBackUrl ? (
+                        <a
+                          href={reviewBackUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-2xl border border-black/10 bg-white/80 px-3 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                        >
+                          Open
+                        </a>
+                      ) : null}
                     </div>
-                  ) : null}
 
-                  {!review.kyc_id_image_path ? (
-                    <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                      No government ID image has been uploaded for this agent.
-                    </div>
-                  ) : reviewImageLoading ? (
-                    <div className="mt-4 rounded-2xl border border-black/10 bg-white/70 p-4 text-sm text-black/60">
-                      Loading government ID image…
-                    </div>
-                  ) : reviewImageErr ? (
-                    <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    <div className="mt-2 text-xs text-black/50">Uploaded: {fmtDate(review.kyc_id_back_image_uploaded_at)}</div>
+
+                    {reviewImageLoading ? (
+                      <div className="mt-4 rounded-2xl border border-black/10 bg-white/70 p-4 text-sm text-black/60">
+                        Loading images…
+                      </div>
+                    ) : reviewBackUrl ? (
+                      <div className="mt-4 rounded-2xl border border-black/10 bg-black/[0.03] p-3">
+                        <img
+                          src={reviewBackUrl}
+                          alt="Back ID"
+                          className="max-h-[420px] w-full rounded-2xl object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                        Back ID image missing.
+                      </div>
+                    )}
+                  </div>
+
+                  {reviewImageErr ? (
+                    <div className="md:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                       {reviewImageErr}
                     </div>
-                  ) : reviewImageUrl ? (
-                    <div className="mt-4 rounded-2xl border border-black/10 bg-black/[0.03] p-3">
-                      <img
-                        src={reviewImageUrl}
-                        alt="Uploaded government ID"
-                        className="max-h-[420px] w-full rounded-2xl object-contain"
-                      />
-                    </div>
-                  ) : (
-                    <div className="mt-4 rounded-2xl border border-black/10 bg-white/70 p-4 text-sm text-black/60">
-                      Government ID image preview unavailable.
-                    </div>
-                  )}
+                  ) : null}
                 </div>
 
                 <div>
@@ -1144,7 +1241,7 @@ export default function AdminAgentsPage() {
                             onChange={(e) => setCheckGovId(e.target.checked)}
                             className="mt-0.5"
                           />
-                          <span>I reviewed the government ID number and the uploaded identification image.</span>
+                          <span>I reviewed the government ID number, front image, and back image.</span>
                         </label>
 
                         <label className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/80 p-3 text-sm text-black/70">
@@ -1233,7 +1330,7 @@ export default function AdminAgentsPage() {
       {imagePreview ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={closeImagePreview} />
-          <div className="relative w-full max-w-5xl rounded-[28px] border border-black/10 bg-white shadow-[0_26px_80px_rgba(11,31,42,0.24)]">
+          <div className="relative w-full max-w-6xl rounded-[28px] border border-black/10 bg-white shadow-[0_26px_80px_rgba(11,31,42,0.24)]">
             <div className="p-6">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -1245,7 +1342,7 @@ export default function AdminAgentsPage() {
                     Government ID / license number ={" "}
                     <span className="font-semibold text-[#0b1f2a]">{imagePreview.license_number || "missing"}</span>
                   </div>
-                  <div className="mt-1 text-xs text-black/50">Uploaded = {fmtDate(imagePreview.uploaded_at)}</div>
+                  <div className="mt-1 text-xs text-black/50">Submitted = {fmtDate(imagePreview.submitted_at)}</div>
                 </div>
 
                 <button
@@ -1256,38 +1353,89 @@ export default function AdminAgentsPage() {
                 </button>
               </div>
 
-              {imagePreviewLoading ? (
+              {previewLoading ? (
                 <div className="mt-5 rounded-2xl border border-black/10 bg-white/70 p-4 text-sm text-black/60">
-                  Loading government ID image…
+                  Loading government ID images…
                 </div>
-              ) : imagePreviewErr ? (
+              ) : previewErr ? (
                 <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                  {imagePreviewErr}
+                  {previewErr}
                 </div>
-              ) : imagePreviewUrl ? (
-                <>
-                  <div className="mt-5 rounded-2xl border border-black/10 bg-black/[0.03] p-3">
-                    <img
-                      src={imagePreviewUrl}
-                      alt="Government ID preview"
-                      className="max-h-[620px] w-full rounded-2xl object-contain"
-                    />
+              ) : (
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <div className="rounded-[24px] border border-black/10 bg-white/80 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-[#0b1f2a]">Front ID image</div>
+                        <div className="mt-1 text-xs text-black/50">
+                          {imagePreview.front_path ? getImageFileName(imagePreview.front_path) : "No front image"}
+                        </div>
+                      </div>
+                      {previewFrontUrl ? (
+                        <a
+                          href={previewFrontUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-2xl border border-black/10 bg-white/80 px-3 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                        >
+                          Open
+                        </a>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-2 text-xs text-black/50">Uploaded: {fmtDate(imagePreview.front_uploaded_at)}</div>
+
+                    {previewFrontUrl ? (
+                      <div className="mt-4 rounded-2xl border border-black/10 bg-black/[0.03] p-3">
+                        <img
+                          src={previewFrontUrl}
+                          alt="Front ID preview"
+                          className="max-h-[520px] w-full rounded-2xl object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                        Front ID image missing.
+                      </div>
+                    )}
                   </div>
 
-                  <div className="mt-4 flex flex-wrap justify-end gap-2">
-                    <a
-                      href={imagePreviewUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-2xl border border-black/10 bg-white/80 px-4 py-2.5 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
-                    >
-                      Open image in new tab
-                    </a>
+                  <div className="rounded-[24px] border border-black/10 bg-white/80 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-[#0b1f2a]">Back ID image</div>
+                        <div className="mt-1 text-xs text-black/50">
+                          {imagePreview.back_path ? getImageFileName(imagePreview.back_path) : "No back image"}
+                        </div>
+                      </div>
+                      {previewBackUrl ? (
+                        <a
+                          href={previewBackUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-2xl border border-black/10 bg-white/80 px-3 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                        >
+                          Open
+                        </a>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-2 text-xs text-black/50">Uploaded: {fmtDate(imagePreview.back_uploaded_at)}</div>
+
+                    {previewBackUrl ? (
+                      <div className="mt-4 rounded-2xl border border-black/10 bg-black/[0.03] p-3">
+                        <img
+                          src={previewBackUrl}
+                          alt="Back ID preview"
+                          className="max-h-[520px] w-full rounded-2xl object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                        Back ID image missing.
+                      </div>
+                    )}
                   </div>
-                </>
-              ) : (
-                <div className="mt-5 rounded-2xl border border-black/10 bg-white/70 p-4 text-sm text-black/60">
-                  Image preview unavailable.
                 </div>
               )}
             </div>
