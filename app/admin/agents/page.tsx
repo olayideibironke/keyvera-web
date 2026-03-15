@@ -11,6 +11,9 @@ type AgentRow = {
   user_id: string;
   kyc_status: "unsubmitted" | "pending" | "verified" | "rejected";
   license_number: string | null;
+  kyc_id_image_path: string | null;
+  kyc_id_image_uploaded_at: string | null;
+  kyc_submitted_at: string | null;
   created_at: string;
 };
 
@@ -33,6 +36,16 @@ type ReviewMode = null | {
   user_id: string;
   agent_label: string;
   license_number: string | null;
+  kyc_id_image_path: string | null;
+  kyc_id_image_uploaded_at: string | null;
+  kyc_submitted_at: string | null;
+};
+
+type ImagePreviewMode = null | {
+  agent_label: string;
+  license_number: string | null;
+  image_path: string;
+  uploaded_at: string | null;
 };
 
 function BadgeIcon({ size = 44 }: { size?: number }) {
@@ -51,10 +64,25 @@ function shortId(id: string) {
   return `${s.slice(0, 8)}…${s.slice(-4)}`;
 }
 
-function fmtDate(x: string) {
-  const d = new Date(x);
+function fmtDate(x: string | null | undefined) {
+  const d = new Date(String(x || ""));
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString();
+}
+
+function getSubmittedAt(row: AgentRow) {
+  return row.kyc_submitted_at || row.created_at;
+}
+
+function hasKycImage(path: string | null | undefined) {
+  return !!String(path || "").trim();
+}
+
+function getKycImageFileName(path: string | null | undefined) {
+  const raw = String(path || "").trim();
+  if (!raw) return "";
+  const parts = raw.split("/");
+  return parts[parts.length - 1] || raw;
 }
 
 function statusPill(status: string | null | undefined) {
@@ -113,6 +141,15 @@ async function logAudit(payload: {
   });
 
   if (error) throw error;
+}
+
+async function createKycSignedUrl(path: string) {
+  const { data, error } = await supabase.storage.from("agent-kyc").createSignedUrl(path, 60 * 60);
+
+  if (error) throw error;
+  if (!data?.signedUrl) throw new Error("Signed image URL could not be created.");
+
+  return data.signedUrl;
 }
 
 function SectionShell({
@@ -193,6 +230,7 @@ export default function AdminAgentsPage() {
 
   const [enforce, setEnforce] = useState<EnforcementMode>(null);
   const [review, setReview] = useState<ReviewMode>(null);
+  const [imagePreview, setImagePreview] = useState<ImagePreviewMode>(null);
 
   const [reason, setReason] = useState("");
   const [auditErr, setAuditErr] = useState<string | null>(null);
@@ -201,6 +239,14 @@ export default function AdminAgentsPage() {
   const [checkNotExpired, setCheckNotExpired] = useState(false);
   const [checkIdentityMatch, setCheckIdentityMatch] = useState(false);
   const [checkFraudReview, setCheckFraudReview] = useState(false);
+
+  const [reviewImageUrl, setReviewImageUrl] = useState<string | null>(null);
+  const [reviewImageLoading, setReviewImageLoading] = useState(false);
+  const [reviewImageErr, setReviewImageErr] = useState<string | null>(null);
+
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [imagePreviewLoading, setImagePreviewLoading] = useState(false);
+  const [imagePreviewErr, setImagePreviewErr] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -216,7 +262,9 @@ export default function AdminAgentsPage() {
 
       const { data, error } = await supabase
         .from("agents")
-        .select("id,user_id,kyc_status,license_number,created_at")
+        .select(
+          "id,user_id,kyc_status,license_number,kyc_id_image_path,kyc_id_image_uploaded_at,kyc_submitted_at,created_at"
+        )
         .in("kyc_status", ["pending", "verified", "rejected"])
         .order("created_at", { ascending: true });
 
@@ -260,6 +308,82 @@ export default function AdminAgentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadReviewImage() {
+      if (!review?.kyc_id_image_path) {
+        setReviewImageUrl(null);
+        setReviewImageErr(null);
+        setReviewImageLoading(false);
+        return;
+      }
+
+      setReviewImageLoading(true);
+      setReviewImageErr(null);
+      setReviewImageUrl(null);
+
+      try {
+        const signedUrl = await createKycSignedUrl(review.kyc_id_image_path);
+        if (!cancelled) {
+          setReviewImageUrl(signedUrl);
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          setReviewImageErr(e?.message ?? "Failed to load government ID image.");
+        }
+      } finally {
+        if (!cancelled) {
+          setReviewImageLoading(false);
+        }
+      }
+    }
+
+    loadReviewImage();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [review?.kyc_id_image_path]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPreviewImage() {
+      if (!imagePreview?.image_path) {
+        setImagePreviewUrl(null);
+        setImagePreviewErr(null);
+        setImagePreviewLoading(false);
+        return;
+      }
+
+      setImagePreviewLoading(true);
+      setImagePreviewErr(null);
+      setImagePreviewUrl(null);
+
+      try {
+        const signedUrl = await createKycSignedUrl(imagePreview.image_path);
+        if (!cancelled) {
+          setImagePreviewUrl(signedUrl);
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          setImagePreviewErr(e?.message ?? "Failed to load government ID image.");
+        }
+      } finally {
+        if (!cancelled) {
+          setImagePreviewLoading(false);
+        }
+      }
+    }
+
+    loadPreviewImage();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [imagePreview?.image_path]);
+
   async function fetchProfileSnapshot(userId: string) {
     const { data, error } = await supabase
       .from("profiles")
@@ -274,7 +398,9 @@ export default function AdminAgentsPage() {
   async function fetchAgentSnapshot(agentId: string) {
     const { data, error } = await supabase
       .from("agents")
-      .select("id,user_id,kyc_status,license_number,created_at")
+      .select(
+        "id,user_id,kyc_status,license_number,kyc_id_image_path,kyc_id_image_uploaded_at,kyc_submitted_at,created_at"
+      )
       .eq("id", agentId)
       .maybeSingle();
 
@@ -289,6 +415,9 @@ export default function AdminAgentsPage() {
     setCheckNotExpired(false);
     setCheckIdentityMatch(false);
     setCheckFraudReview(false);
+    setReviewImageUrl(null);
+    setReviewImageErr(null);
+    setReviewImageLoading(false);
   }
 
   const openReview = (kind: "approve_kyc" | "reject_kyc", row: AgentRow) => {
@@ -304,6 +433,9 @@ export default function AdminAgentsPage() {
       user_id: row.user_id,
       agent_label: `${label} • ${shortId(row.user_id)}`,
       license_number: row.license_number,
+      kyc_id_image_path: row.kyc_id_image_path,
+      kyc_id_image_uploaded_at: row.kyc_id_image_uploaded_at,
+      kyc_submitted_at: row.kyc_submitted_at,
     });
   };
 
@@ -311,6 +443,29 @@ export default function AdminAgentsPage() {
     if (busyId) return;
     setReview(null);
     resetReviewState();
+  };
+
+  const openImagePreview = (row: AgentRow) => {
+    if (!row.kyc_id_image_path) return;
+
+    const p = profiles[row.user_id];
+    const label = p?.full_name?.trim() || "Agent";
+
+    setImagePreviewErr(null);
+    setImagePreviewUrl(null);
+    setImagePreview({
+      agent_label: `${label} • ${shortId(row.user_id)}`,
+      license_number: row.license_number,
+      image_path: row.kyc_id_image_path,
+      uploaded_at: row.kyc_id_image_uploaded_at || row.kyc_submitted_at || row.created_at,
+    });
+  };
+
+  const closeImagePreview = () => {
+    setImagePreview(null);
+    setImagePreviewUrl(null);
+    setImagePreviewErr(null);
+    setImagePreviewLoading(false);
   };
 
   const updateKycStatus = async (
@@ -332,7 +487,9 @@ export default function AdminAgentsPage() {
         .from("agents")
         .update({ kyc_status: status })
         .eq("id", row.id)
-        .select("id,user_id,kyc_status,license_number,created_at")
+        .select(
+          "id,user_id,kyc_status,license_number,kyc_id_image_path,kyc_id_image_uploaded_at,kyc_submitted_at,created_at"
+        )
         .maybeSingle();
 
       if (error) throw error;
@@ -402,6 +559,11 @@ export default function AdminAgentsPage() {
         return;
       }
 
+      if (!String(review.kyc_id_image_path || "").trim()) {
+        setAuditErr("Cannot approve KYC without an uploaded government ID image.");
+        return;
+      }
+
       if (!checkGovId || !checkNotExpired || !checkIdentityMatch || !checkFraudReview) {
         setAuditErr("All trust checks must be confirmed before approval.");
         return;
@@ -409,7 +571,7 @@ export default function AdminAgentsPage() {
 
       const composedReason =
         `Approve agent KYC. ${cleanReason} | ` +
-        `Checks confirmed: government ID reviewed, non-expired document confirmed, identity match reviewed, fraud review completed.`;
+        `Checks confirmed: government ID number reviewed, uploaded ID image reviewed, non-expired document confirmed, identity match reviewed, fraud review completed.`;
 
       const ok = await updateKycStatus(currentRow, "verified", composedReason);
       if (ok) {
@@ -569,12 +731,12 @@ export default function AdminAgentsPage() {
       <section className="mb-6 grid gap-4 md:grid-cols-3">
         <SmallRuleCard
           title="Core approval rule"
-          body="Only approve agents after reviewing a real government ID, confirming it is not expired, checking identity consistency, and completing a fraud-risk review."
+          body="Only approve agents after reviewing the government ID number, the uploaded government ID image, document validity, identity consistency, and fraud-risk signals."
           tone="good"
         />
         <SmallRuleCard
           title="Current schema limitation"
-          body="This admin page now enforces strict review discipline, but true auto-expiry detection still needs ID expiry date and upload fields added to the database and submission form."
+          body="Government ID image upload is now collected, but true auto-expiry detection still needs expiry-date capture, selfie match, and stronger fraud tooling."
           tone="warn"
         />
         <SmallRuleCard
@@ -606,7 +768,7 @@ export default function AdminAgentsPage() {
             <SectionBadge>{rows.length}</SectionBadge>
           </>
         }
-        subtitle="Pending, verified, and rejected agent KYC records. Use strict review discipline before approval."
+        subtitle="Pending, verified, and rejected agent KYC records. Review uploaded ID evidence before approval."
         right={<div className="text-xs text-black/50">Trust-first review workspace</div>}
       >
         {loading ? (
@@ -620,14 +782,15 @@ export default function AdminAgentsPage() {
           <>
             <div className="hidden xl:block">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1240px] text-left text-sm">
+                <table className="w-full min-w-[1380px] text-left text-sm">
                   <thead className="bg-gradient-to-b from-black/5 to-black/0">
                     <tr>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Agent</th>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Agent ID</th>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">KYC</th>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Account</th>
-                      <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Government ID No.</th>
+                      <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Government ID</th>
+                      <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">ID Image</th>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Submitted</th>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60 text-right">Actions</th>
                     </tr>
@@ -638,6 +801,7 @@ export default function AdminAgentsPage() {
                       const p = profiles[r.user_id];
                       const account = (p?.account_status || "active").toLowerCase();
                       const isDisabled = account === "disabled";
+                      const hasImage = hasKycImage(r.kyc_id_image_path);
 
                       return (
                         <tr key={r.id} className="border-t border-black/5 align-top">
@@ -664,8 +828,30 @@ export default function AdminAgentsPage() {
                             <span className={statusPill(account)}>{account}</span>
                           </td>
 
-                          <td className="px-5 py-5 text-[#0b1f2a]">{r.license_number ?? "—"}</td>
-                          <td className="px-5 py-5 text-black/60">{fmtDate(r.created_at)}</td>
+                          <td className="px-5 py-5">
+                            <div className="text-[#0b1f2a]">{r.license_number ?? "—"}</div>
+                          </td>
+
+                          <td className="px-5 py-5">
+                            {hasImage ? (
+                              <div className="space-y-2">
+                                <span className="inline-flex items-center rounded-full border border-[rgba(14,165,163,0.20)] bg-[rgba(14,165,163,0.08)] px-2.5 py-1 text-[11px] font-semibold text-[#0a4f63]">
+                                  Image uploaded
+                                </span>
+                                <div className="text-xs text-black/50">{getKycImageFileName(r.kyc_id_image_path)}</div>
+                                <button
+                                  onClick={() => openImagePreview(r)}
+                                  className="rounded-2xl border border-black/10 bg-white/80 px-3 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                                >
+                                  View ID
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="text-xs font-semibold text-red-700">No image uploaded</div>
+                            )}
+                          </td>
+
+                          <td className="px-5 py-5 text-black/60">{fmtDate(getSubmittedAt(r))}</td>
 
                           <td className="px-5 py-5">
                             <div className="flex flex-wrap justify-end gap-2">
@@ -738,6 +924,7 @@ export default function AdminAgentsPage() {
                 const p = profiles[r.user_id];
                 const account = (p?.account_status || "active").toLowerCase();
                 const isDisabled = account === "disabled";
+                const hasImage = hasKycImage(r.kyc_id_image_path);
 
                 return (
                   <article
@@ -771,9 +958,26 @@ export default function AdminAgentsPage() {
                         <div className="mt-1 text-sm text-[#0b1f2a]">{r.license_number ?? "—"}</div>
                       </div>
 
-                      <div className="sm:col-span-2">
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">ID Image</div>
+                        {hasImage ? (
+                          <div className="mt-2 space-y-2">
+                            <div className="text-xs text-black/50">{getKycImageFileName(r.kyc_id_image_path)}</div>
+                            <button
+                              onClick={() => openImagePreview(r)}
+                              className="rounded-2xl border border-black/10 bg-white/80 px-3 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                            >
+                              View ID
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="mt-1 text-sm text-red-700">No image uploaded</div>
+                        )}
+                      </div>
+
+                      <div>
                         <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Submitted</div>
-                        <div className="mt-1 text-sm text-black/60">{fmtDate(r.created_at)}</div>
+                        <div className="mt-1 text-sm text-black/60">{fmtDate(getSubmittedAt(r))}</div>
                       </div>
                     </div>
 
@@ -843,7 +1047,7 @@ export default function AdminAgentsPage() {
       {review ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={closeReview} />
-          <div className="relative w-full max-w-2xl rounded-[28px] border border-black/10 bg-white shadow-[0_26px_80px_rgba(11,31,42,0.24)]">
+          <div className="relative w-full max-w-5xl rounded-[28px] border border-black/10 bg-white shadow-[0_26px_80px_rgba(11,31,42,0.24)]">
             <div className="p-6">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -854,8 +1058,11 @@ export default function AdminAgentsPage() {
                     <span className="font-mono text-xs">{review.agent_label}</span>
                   </div>
                   <div className="mt-2 text-xs text-black/50">
-                    Current schema field available now: government ID / license number ={" "}
+                    Government ID / license number ={" "}
                     <span className="font-semibold text-[#0b1f2a]">{review.license_number || "missing"}</span>
+                  </div>
+                  <div className="mt-1 text-xs text-black/50">
+                    Submitted = <span className="font-semibold text-[#0b1f2a]">{fmtDate(review.kyc_submitted_at)}</span>
                   </div>
                 </div>
 
@@ -868,73 +1075,133 @@ export default function AdminAgentsPage() {
                 </button>
               </div>
 
-              {review.kind === "approve_kyc" ? (
-                <div className="mt-5 rounded-[24px] border border-[rgba(14,165,163,0.22)] bg-[rgba(14,165,163,0.08)] p-4">
-                  <div className="text-sm font-semibold text-[#0b1f2a]">Mandatory trust checks before approval</div>
-                  <div className="mt-3 grid gap-3">
-                    <label className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/80 p-3 text-sm text-black/70">
-                      <input
-                        type="checkbox"
-                        checked={checkGovId}
-                        onChange={(e) => setCheckGovId(e.target.checked)}
-                        className="mt-0.5"
-                      />
-                      <span>I reviewed a valid government ID / identification record.</span>
-                    </label>
+              <div className="mt-5 grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+                <div className="rounded-[24px] border border-black/10 bg-white/80 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-[#0b1f2a]">Uploaded government ID image</div>
+                      <div className="mt-1 text-xs text-black/50">
+                        {review.kyc_id_image_path
+                          ? getKycImageFileName(review.kyc_id_image_path)
+                          : "No image uploaded"}
+                      </div>
+                    </div>
 
-                    <label className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/80 p-3 text-sm text-black/70">
-                      <input
-                        type="checkbox"
-                        checked={checkNotExpired}
-                        onChange={(e) => setCheckNotExpired(e.target.checked)}
-                        className="mt-0.5"
-                      />
-                      <span>I confirmed the document is not expired.</span>
-                    </label>
+                    {reviewImageUrl ? (
+                      <a
+                        href={reviewImageUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-2xl border border-black/10 bg-white/80 px-3 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                      >
+                        Open image
+                      </a>
+                    ) : null}
+                  </div>
 
-                    <label className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/80 p-3 text-sm text-black/70">
-                      <input
-                        type="checkbox"
-                        checked={checkIdentityMatch}
-                        onChange={(e) => setCheckIdentityMatch(e.target.checked)}
-                        className="mt-0.5"
-                      />
-                      <span>I confirmed the identity details are consistent with the agent record.</span>
-                    </label>
+                  {review.kyc_id_image_uploaded_at ? (
+                    <div className="mt-2 text-xs text-black/50">
+                      Uploaded at: {fmtDate(review.kyc_id_image_uploaded_at)}
+                    </div>
+                  ) : null}
 
-                    <label className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/80 p-3 text-sm text-black/70">
-                      <input
-                        type="checkbox"
-                        checked={checkFraudReview}
-                        onChange={(e) => setCheckFraudReview(e.target.checked)}
-                        className="mt-0.5"
+                  {!review.kyc_id_image_path ? (
+                    <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                      No government ID image has been uploaded for this agent.
+                    </div>
+                  ) : reviewImageLoading ? (
+                    <div className="mt-4 rounded-2xl border border-black/10 bg-white/70 p-4 text-sm text-black/60">
+                      Loading government ID image…
+                    </div>
+                  ) : reviewImageErr ? (
+                    <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                      {reviewImageErr}
+                    </div>
+                  ) : reviewImageUrl ? (
+                    <div className="mt-4 rounded-2xl border border-black/10 bg-black/[0.03] p-3">
+                      <img
+                        src={reviewImageUrl}
+                        alt="Uploaded government ID"
+                        className="max-h-[420px] w-full rounded-2xl object-contain"
                       />
-                      <span>I completed a fraud-risk review and found no disqualifying red flags.</span>
-                    </label>
+                    </div>
+                  ) : (
+                    <div className="mt-4 rounded-2xl border border-black/10 bg-white/70 p-4 text-sm text-black/60">
+                      Government ID image preview unavailable.
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  {review.kind === "approve_kyc" ? (
+                    <div className="rounded-[24px] border border-[rgba(14,165,163,0.22)] bg-[rgba(14,165,163,0.08)] p-4">
+                      <div className="text-sm font-semibold text-[#0b1f2a]">Mandatory trust checks before approval</div>
+                      <div className="mt-3 grid gap-3">
+                        <label className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/80 p-3 text-sm text-black/70">
+                          <input
+                            type="checkbox"
+                            checked={checkGovId}
+                            onChange={(e) => setCheckGovId(e.target.checked)}
+                            className="mt-0.5"
+                          />
+                          <span>I reviewed the government ID number and the uploaded identification image.</span>
+                        </label>
+
+                        <label className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/80 p-3 text-sm text-black/70">
+                          <input
+                            type="checkbox"
+                            checked={checkNotExpired}
+                            onChange={(e) => setCheckNotExpired(e.target.checked)}
+                            className="mt-0.5"
+                          />
+                          <span>I confirmed the document is not expired.</span>
+                        </label>
+
+                        <label className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/80 p-3 text-sm text-black/70">
+                          <input
+                            type="checkbox"
+                            checked={checkIdentityMatch}
+                            onChange={(e) => setCheckIdentityMatch(e.target.checked)}
+                            className="mt-0.5"
+                          />
+                          <span>I confirmed the identity details are consistent with the agent record.</span>
+                        </label>
+
+                        <label className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/80 p-3 text-sm text-black/70">
+                          <input
+                            type="checkbox"
+                            checked={checkFraudReview}
+                            onChange={(e) => setCheckFraudReview(e.target.checked)}
+                            className="mt-0.5"
+                          />
+                          <span>I completed a fraud-risk review and found no disqualifying red flags.</span>
+                        </label>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-[24px] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                      Rejection should be used when the KYC evidence is missing, suspicious, inconsistent, unreadable, or expired.
+                    </div>
+                  )}
+
+                  <div className="mt-5">
+                    <div className="text-[11px] font-medium text-black/50">Reason (required)</div>
+                    <textarea
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      rows={6}
+                      placeholder={
+                        review.kind === "approve_kyc"
+                          ? "Write the approval reason and review notes..."
+                          : "Write the rejection reason clearly..."
+                      }
+                      className="mt-1 w-full resize-none rounded-2xl border border-black/10 bg-white/70 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.40)] focus:ring-4 focus:ring-[rgba(14,165,163,0.12)]"
+                    />
+                    {auditErr ? (
+                      <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{auditErr}</div>
+                    ) : null}
                   </div>
                 </div>
-              ) : (
-                <div className="mt-5 rounded-[24px] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                  Rejection should be used when the KYC evidence is missing, suspicious, inconsistent, unreadable, or expired.
-                </div>
-              )}
-
-              <div className="mt-5">
-                <div className="text-[11px] font-medium text-black/50">Reason (required)</div>
-                <textarea
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  rows={4}
-                  placeholder={
-                    review.kind === "approve_kyc"
-                      ? "Write the approval reason and notes..."
-                      : "Write the rejection reason clearly..."
-                  }
-                  className="mt-1 w-full resize-none rounded-2xl border border-black/10 bg-white/70 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.40)] focus:ring-4 focus:ring-[rgba(14,165,163,0.12)]"
-                />
-                {auditErr ? (
-                  <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{auditErr}</div>
-                ) : null}
               </div>
 
               <div className="mt-6 flex flex-wrap justify-end gap-2">
@@ -958,6 +1225,71 @@ export default function AdminAgentsPage() {
                   {busyId ? "Working…" : review.kind === "approve_kyc" ? "Confirm Approval" : "Confirm Rejection"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {imagePreview ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={closeImagePreview} />
+          <div className="relative w-full max-w-5xl rounded-[28px] border border-black/10 bg-white shadow-[0_26px_80px_rgba(11,31,42,0.24)]">
+            <div className="p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-sm font-semibold text-[#0b1f2a]">Government ID image preview</div>
+                  <div className="mt-1 text-sm text-black/60">
+                    <span className="font-mono text-xs">{imagePreview.agent_label}</span>
+                  </div>
+                  <div className="mt-2 text-xs text-black/50">
+                    Government ID / license number ={" "}
+                    <span className="font-semibold text-[#0b1f2a]">{imagePreview.license_number || "missing"}</span>
+                  </div>
+                  <div className="mt-1 text-xs text-black/50">Uploaded = {fmtDate(imagePreview.uploaded_at)}</div>
+                </div>
+
+                <button
+                  onClick={closeImagePreview}
+                  className="rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                >
+                  Close
+                </button>
+              </div>
+
+              {imagePreviewLoading ? (
+                <div className="mt-5 rounded-2xl border border-black/10 bg-white/70 p-4 text-sm text-black/60">
+                  Loading government ID image…
+                </div>
+              ) : imagePreviewErr ? (
+                <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                  {imagePreviewErr}
+                </div>
+              ) : imagePreviewUrl ? (
+                <>
+                  <div className="mt-5 rounded-2xl border border-black/10 bg-black/[0.03] p-3">
+                    <img
+                      src={imagePreviewUrl}
+                      alt="Government ID preview"
+                      className="max-h-[620px] w-full rounded-2xl object-contain"
+                    />
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap justify-end gap-2">
+                    <a
+                      href={imagePreviewUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-2xl border border-black/10 bg-white/80 px-4 py-2.5 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                    >
+                      Open image in new tab
+                    </a>
+                  </div>
+                </>
+              ) : (
+                <div className="mt-5 rounded-2xl border border-black/10 bg-white/70 p-4 text-sm text-black/60">
+                  Image preview unavailable.
+                </div>
+              )}
             </div>
           </div>
         </div>
