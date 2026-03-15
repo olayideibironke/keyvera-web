@@ -27,6 +27,14 @@ type EnforcementMode = null | {
   agent_label: string;
 };
 
+type ReviewMode = null | {
+  kind: "approve_kyc" | "reject_kyc";
+  agent_id: string;
+  user_id: string;
+  agent_label: string;
+  license_number: string | null;
+};
+
 function BadgeIcon({ size = 44 }: { size?: number }) {
   return (
     <div
@@ -54,6 +62,20 @@ function statusPill(status: string | null | undefined) {
   const base = "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold";
   if (s === "disabled") return `${base} border-red-200 bg-red-50 text-red-700`;
   if (s === "active") return `${base} border-[rgba(14,165,163,0.25)] bg-[rgba(14,165,163,0.10)] text-[#0a4f63]`;
+  return `${base} border-black/10 bg-white/70 text-black/60`;
+}
+
+function kycPill(status: AgentRow["kyc_status"]) {
+  const base = "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold";
+  if (status === "verified") {
+    return `${base} border-[rgba(14,165,163,0.25)] bg-[rgba(14,165,163,0.10)] text-[#0a4f63]`;
+  }
+  if (status === "pending") {
+    return `${base} border-amber-200 bg-amber-50 text-amber-900`;
+  }
+  if (status === "rejected") {
+    return `${base} border-red-200 bg-red-50 text-red-700`;
+  }
   return `${base} border-black/10 bg-white/70 text-black/60`;
 }
 
@@ -137,6 +159,30 @@ function EmptyState({ title, body }: { title: string; body?: string }) {
   );
 }
 
+function SmallRuleCard({
+  title,
+  body,
+  tone = "neutral",
+}: {
+  title: string;
+  body: string;
+  tone?: "neutral" | "good" | "warn";
+}) {
+  const cls =
+    tone === "good"
+      ? "border-[rgba(14,165,163,0.20)] bg-[rgba(14,165,163,0.08)]"
+      : tone === "warn"
+      ? "border-amber-200 bg-amber-50"
+      : "border-black/10 bg-white/80";
+
+  return (
+    <div className={`rounded-[24px] border p-5 shadow-[0_14px_34px_rgba(11,31,42,0.06)] ${cls}`}>
+      <div className="text-sm font-semibold text-[#0b1f2a]">{title}</div>
+      <div className="mt-2 text-sm leading-relaxed text-black/55">{body}</div>
+    </div>
+  );
+}
+
 export default function AdminAgentsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -146,8 +192,15 @@ export default function AdminAgentsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const [enforce, setEnforce] = useState<EnforcementMode>(null);
+  const [review, setReview] = useState<ReviewMode>(null);
+
   const [reason, setReason] = useState("");
   const [auditErr, setAuditErr] = useState<string | null>(null);
+
+  const [checkGovId, setCheckGovId] = useState(false);
+  const [checkNotExpired, setCheckNotExpired] = useState(false);
+  const [checkIdentityMatch, setCheckIdentityMatch] = useState(false);
+  const [checkFraudReview, setCheckFraudReview] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -164,7 +217,7 @@ export default function AdminAgentsPage() {
       const { data, error } = await supabase
         .from("agents")
         .select("id,user_id,kyc_status,license_number,created_at")
-        .eq("kyc_status", "pending")
+        .in("kyc_status", ["pending", "verified", "rejected"])
         .order("created_at", { ascending: true });
 
       if (error) throw error;
@@ -229,7 +282,38 @@ export default function AdminAgentsPage() {
     return data ?? null;
   }
 
-  const updateKycStatus = async (row: AgentRow, status: "verified" | "rejected") => {
+  function resetReviewState() {
+    setReason("");
+    setAuditErr(null);
+    setCheckGovId(false);
+    setCheckNotExpired(false);
+    setCheckIdentityMatch(false);
+    setCheckFraudReview(false);
+  }
+
+  const openReview = (kind: "approve_kyc" | "reject_kyc", row: AgentRow) => {
+    const p = profiles[row.user_id];
+    const label = p?.full_name?.trim() || "Agent";
+
+    resetReviewState();
+    setErrorMsg("");
+
+    setReview({
+      kind,
+      agent_id: row.id,
+      user_id: row.user_id,
+      agent_label: `${label} • ${shortId(row.user_id)}`,
+      license_number: row.license_number,
+    });
+  };
+
+  const closeReview = () => {
+    if (busyId) return;
+    setReview(null);
+    resetReviewState();
+  };
+
+  const updateKycStatus = async (row: AgentRow, status: "verified" | "rejected", auditReason: string) => {
     setErrorMsg("");
     setAuditErr(null);
     setBusyId(row.id);
@@ -251,7 +335,7 @@ export default function AdminAgentsPage() {
           action: status === "verified" ? "approve_agent_kyc" : "reject_agent_kyc",
           entity_type: "agent",
           entity_id: row.id,
-          reason: status === "verified" ? "Approve agent KYC" : "Reject agent KYC",
+          reason: auditReason,
           before,
           after,
         });
@@ -265,6 +349,46 @@ export default function AdminAgentsPage() {
     } finally {
       setBusyId(null);
     }
+  };
+
+  const confirmReview = async () => {
+    if (!review) return;
+
+    const cleanReason = reason.trim();
+    if (!cleanReason) {
+      setAuditErr("Reason is required.");
+      return;
+    }
+
+    const currentRow = rows.find((r) => r.id === review.agent_id);
+    if (!currentRow) {
+      setAuditErr("Agent record not found.");
+      return;
+    }
+
+    if (review.kind === "approve_kyc") {
+      if (!String(review.license_number || "").trim()) {
+        setAuditErr("Cannot approve KYC without a government ID / license number in the current schema.");
+        return;
+      }
+
+      if (!checkGovId || !checkNotExpired || !checkIdentityMatch || !checkFraudReview) {
+        setAuditErr("All trust checks must be confirmed before approval.");
+        return;
+      }
+
+      const composedReason =
+        `Approve agent KYC. ${cleanReason} | ` +
+        `Checks confirmed: government ID reviewed, non-expired document confirmed, identity match reviewed, fraud review completed.`;
+
+      await updateKycStatus(currentRow, "verified", composedReason);
+      closeReview();
+      return;
+    }
+
+    const rejectReason = `Reject agent KYC. ${cleanReason}`;
+    await updateKycStatus(currentRow, "rejected", rejectReason);
+    closeReview();
   };
 
   const openEnforcement = (kind: "disable_agent" | "enable_agent", row: AgentRow) => {
@@ -308,7 +432,10 @@ export default function AdminAgentsPage() {
 
       const nextStatus = enforce.kind === "disable_agent" ? "disabled" : "active";
 
-      const { error: upErr } = await supabase.from("profiles").update({ account_status: nextStatus }).eq("user_id", enforce.user_id);
+      const { error: upErr } = await supabase
+        .from("profiles")
+        .update({ account_status: nextStatus })
+        .eq("user_id", enforce.user_id);
 
       if (upErr) throw upErr;
 
@@ -337,12 +464,14 @@ export default function AdminAgentsPage() {
     }
   };
 
-  const pendingCount = rows.length;
+  const pendingCount = rows.filter((r) => r.kyc_status === "pending").length;
+  const verifiedCount = rows.filter((r) => r.kyc_status === "verified").length;
+  const rejectedCount = rows.filter((r) => r.kyc_status === "rejected").length;
 
   const summary = useMemo(() => {
     if (loading) return { label: "Loading…", tone: "text-black/60" as const };
     if (errorMsg) return { label: "Attention needed", tone: "text-red-700" as const };
-    if (pendingCount === 0) return { label: "All caught up", tone: "text-black/60" as const };
+    if (pendingCount === 0) return { label: "No pending KYC", tone: "text-black/60" as const };
     return { label: `${pendingCount} pending review`, tone: "text-[#0a4f63]" as const };
   }, [loading, errorMsg, pendingCount]);
 
@@ -354,7 +483,9 @@ export default function AdminAgentsPage() {
             <BadgeIcon size={44} />
             <div>
               <h1 className="text-2xl font-semibold tracking-tight text-[#0b1f2a] md:text-3xl">Agent Verifications</h1>
-              <p className="mt-1 text-sm text-black/60">Approve or reject agent KYC before they can operate.</p>
+              <p className="mt-1 text-sm text-black/60">
+                Strict KYC review for fraud control, trust screening, and safer marketplace participation.
+              </p>
             </div>
           </div>
 
@@ -401,34 +532,68 @@ export default function AdminAgentsPage() {
         <div className="mb-6 rounded-[28px] border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">{auditErr}</div>
       ) : null}
 
+      <section className="mb-6 grid gap-4 md:grid-cols-3">
+        <SmallRuleCard
+          title="Core approval rule"
+          body="Only approve agents after reviewing a real government ID, confirming it is not expired, checking identity consistency, and completing a fraud-risk review."
+          tone="good"
+        />
+        <SmallRuleCard
+          title="Current schema limitation"
+          body="This admin page now enforces strict review discipline, but true auto-expiry detection still needs ID expiry date and upload fields added to the database and submission form."
+          tone="warn"
+        />
+        <SmallRuleCard
+          title="Operational standard"
+          body="Every approval, rejection, disable, or enable action must carry a written reason so Keyvera maintains an auditable trust trail."
+          tone="neutral"
+        />
+      </section>
+
+      <section className="mb-6 grid gap-3 md:grid-cols-3">
+        <div className="rounded-[22px] border border-[rgba(14,165,163,0.22)] bg-[rgba(14,165,163,0.06)] p-5 shadow-[0_12px_30px_rgba(11,31,42,0.06)]">
+          <div className="text-xs font-semibold text-black/60">Pending KYC</div>
+          <div className="mt-2 text-2xl font-semibold text-[#0b1f2a]">{pendingCount}</div>
+        </div>
+        <div className="rounded-[22px] border border-black/10 bg-[rgba(11,31,42,0.04)] p-5 shadow-[0_12px_30px_rgba(11,31,42,0.06)]">
+          <div className="text-xs font-semibold text-black/60">Verified</div>
+          <div className="mt-2 text-2xl font-semibold text-[#0b1f2a]">{verifiedCount}</div>
+        </div>
+        <div className="rounded-[22px] border border-amber-200 bg-amber-50/70 p-5 shadow-[0_12px_30px_rgba(11,31,42,0.06)]">
+          <div className="text-xs font-semibold text-black/60">Rejected</div>
+          <div className="mt-2 text-2xl font-semibold text-[#0b1f2a]">{rejectedCount}</div>
+        </div>
+      </section>
+
       <SectionShell
         title={
           <>
-            <div className="text-sm font-semibold text-[#0b1f2a]">Pending Agents</div>
-            <SectionBadge>{pendingCount}</SectionBadge>
+            <div className="text-sm font-semibold text-[#0b1f2a]">KYC Review Queue</div>
+            <SectionBadge>{rows.length}</SectionBadge>
           </>
         }
-        subtitle="Queue ordered by oldest first. Review KYC decisions cleanly and keep enforcement actions deliberate."
-        right={<div className="text-xs text-black/50">Premium review queue</div>}
+        subtitle="Pending, verified, and rejected agent KYC records. Use strict review discipline before approval."
+        right={<div className="text-xs text-black/50">Trust-first review workspace</div>}
       >
         {loading ? (
           <div className="p-6 text-sm text-black/60">Loading…</div>
         ) : rows.length === 0 ? (
           <EmptyState
-            title="No pending agents."
-            body="When agents submit KYC, they’ll appear here for approval."
+            title="No agent KYC records."
+            body="When agents submit or move through KYC, they’ll appear here."
           />
         ) : (
           <>
             <div className="hidden xl:block">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1120px] text-left text-sm">
+                <table className="w-full min-w-[1240px] text-left text-sm">
                   <thead className="bg-gradient-to-b from-black/5 to-black/0">
                     <tr>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Agent</th>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Agent ID</th>
+                      <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">KYC</th>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Account</th>
-                      <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">License</th>
+                      <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Government ID No.</th>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Submitted</th>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60 text-right">Actions</th>
                     </tr>
@@ -458,6 +623,10 @@ export default function AdminAgentsPage() {
                           </td>
 
                           <td className="px-5 py-5">
+                            <span className={kycPill(r.kyc_status)}>{r.kyc_status}</span>
+                          </td>
+
+                          <td className="px-5 py-5">
                             <span className={statusPill(account)}>{account}</span>
                           </td>
 
@@ -466,29 +635,33 @@ export default function AdminAgentsPage() {
 
                           <td className="px-5 py-5">
                             <div className="flex flex-wrap justify-end gap-2">
-                              <button
-                                onClick={() => updateKycStatus(r, "verified")}
-                                disabled={busy}
-                                className={`rounded-2xl px-4 py-2.5 text-xs font-semibold transition ${
-                                  busy
-                                    ? "cursor-not-allowed border border-black/10 bg-white/70 text-black/40"
-                                    : "bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] text-white shadow-[0_14px_34px_rgba(10,79,99,0.22)] hover:shadow-[0_18px_44px_rgba(10,79,99,0.30)]"
-                                }`}
-                              >
-                                {busy ? "Working…" : "Approve KYC"}
-                              </button>
+                              {r.kyc_status === "pending" ? (
+                                <>
+                                  <button
+                                    onClick={() => openReview("approve_kyc", r)}
+                                    disabled={busy}
+                                    className={`rounded-2xl px-4 py-2.5 text-xs font-semibold transition ${
+                                      busy
+                                        ? "cursor-not-allowed border border-black/10 bg-white/70 text-black/40"
+                                        : "bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] text-white shadow-[0_14px_34px_rgba(10,79,99,0.22)] hover:shadow-[0_18px_44px_rgba(10,79,99,0.30)]"
+                                    }`}
+                                  >
+                                    {busy ? "Working…" : "Approve KYC"}
+                                  </button>
 
-                              <button
-                                onClick={() => updateKycStatus(r, "rejected")}
-                                disabled={busy}
-                                className={`rounded-2xl border px-4 py-2.5 text-xs font-semibold transition ${
-                                  busy
-                                    ? "cursor-not-allowed border-black/10 bg-white/70 text-black/40"
-                                    : "border-black/10 bg-white/70 text-[#0b1f2a] hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
-                                }`}
-                              >
-                                Reject
-                              </button>
+                                  <button
+                                    onClick={() => openReview("reject_kyc", r)}
+                                    disabled={busy}
+                                    className={`rounded-2xl border px-4 py-2.5 text-xs font-semibold transition ${
+                                      busy
+                                        ? "cursor-not-allowed border-black/10 bg-white/70 text-black/40"
+                                        : "border-black/10 bg-white/70 text-[#0b1f2a] hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                                    }`}
+                                  >
+                                    Reject
+                                  </button>
+                                </>
+                              ) : null}
 
                               {isDisabled ? (
                                 <button
@@ -545,7 +718,10 @@ export default function AdminAgentsPage() {
                         </div>
                       </div>
 
-                      <span className={statusPill(account)}>{account}</span>
+                      <div className="flex flex-wrap gap-2">
+                        <span className={kycPill(r.kyc_status)}>{r.kyc_status}</span>
+                        <span className={statusPill(account)}>{account}</span>
+                      </div>
                     </div>
 
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -557,7 +733,7 @@ export default function AdminAgentsPage() {
                       </div>
 
                       <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">License</div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Government ID No.</div>
                         <div className="mt-1 text-sm text-[#0b1f2a]">{r.license_number ?? "—"}</div>
                       </div>
 
@@ -568,29 +744,33 @@ export default function AdminAgentsPage() {
                     </div>
 
                     <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                      <button
-                        onClick={() => updateKycStatus(r, "verified")}
-                        disabled={busy}
-                        className={`rounded-2xl px-4 py-3 text-xs font-semibold transition ${
-                          busy
-                            ? "cursor-not-allowed border border-black/10 bg-white/70 text-black/40"
-                            : "bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] text-white shadow-[0_14px_34px_rgba(10,79,99,0.22)] hover:shadow-[0_18px_44px_rgba(10,79,99,0.30)]"
-                        }`}
-                      >
-                        {busy ? "Working…" : "Approve KYC"}
-                      </button>
+                      {r.kyc_status === "pending" ? (
+                        <>
+                          <button
+                            onClick={() => openReview("approve_kyc", r)}
+                            disabled={busy}
+                            className={`rounded-2xl px-4 py-3 text-xs font-semibold transition ${
+                              busy
+                                ? "cursor-not-allowed border border-black/10 bg-white/70 text-black/40"
+                                : "bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] text-white shadow-[0_14px_34px_rgba(10,79,99,0.22)] hover:shadow-[0_18px_44px_rgba(10,79,99,0.30)]"
+                            }`}
+                          >
+                            {busy ? "Working…" : "Approve KYC"}
+                          </button>
 
-                      <button
-                        onClick={() => updateKycStatus(r, "rejected")}
-                        disabled={busy}
-                        className={`rounded-2xl border px-4 py-3 text-xs font-semibold transition ${
-                          busy
-                            ? "cursor-not-allowed border-black/10 bg-white/70 text-black/40"
-                            : "border-black/10 bg-white/70 text-[#0b1f2a] hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
-                        }`}
-                      >
-                        Reject
-                      </button>
+                          <button
+                            onClick={() => openReview("reject_kyc", r)}
+                            disabled={busy}
+                            className={`rounded-2xl border px-4 py-3 text-xs font-semibold transition ${
+                              busy
+                                ? "cursor-not-allowed border-black/10 bg-white/70 text-black/40"
+                                : "border-black/10 bg-white/70 text-[#0b1f2a] hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
+                            }`}
+                          >
+                            Reject
+                          </button>
+                        </>
+                      ) : null}
 
                       {isDisabled ? (
                         <button
@@ -625,6 +805,129 @@ export default function AdminAgentsPage() {
           </>
         )}
       </SectionShell>
+
+      {review ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={closeReview} />
+          <div className="relative w-full max-w-2xl rounded-[28px] border border-black/10 bg-white shadow-[0_26px_80px_rgba(11,31,42,0.24)]">
+            <div className="p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-sm font-semibold text-[#0b1f2a]">
+                    {review.kind === "approve_kyc" ? "Approve agent KYC" : "Reject agent KYC"}
+                  </div>
+                  <div className="mt-1 text-sm text-black/60">
+                    <span className="font-mono text-xs">{review.agent_label}</span>
+                  </div>
+                  <div className="mt-2 text-xs text-black/50">
+                    Current schema field available now: government ID / license number ={" "}
+                    <span className="font-semibold text-[#0b1f2a]">{review.license_number || "missing"}</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={closeReview}
+                  disabled={!!busyId}
+                  className="rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)] disabled:cursor-not-allowed disabled:text-black/40"
+                >
+                  Close
+                </button>
+              </div>
+
+              {review.kind === "approve_kyc" ? (
+                <div className="mt-5 rounded-[24px] border border-[rgba(14,165,163,0.22)] bg-[rgba(14,165,163,0.08)] p-4">
+                  <div className="text-sm font-semibold text-[#0b1f2a]">Mandatory trust checks before approval</div>
+                  <div className="mt-3 grid gap-3">
+                    <label className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/80 p-3 text-sm text-black/70">
+                      <input
+                        type="checkbox"
+                        checked={checkGovId}
+                        onChange={(e) => setCheckGovId(e.target.checked)}
+                        className="mt-0.5"
+                      />
+                      <span>I reviewed a valid government ID / identification record.</span>
+                    </label>
+
+                    <label className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/80 p-3 text-sm text-black/70">
+                      <input
+                        type="checkbox"
+                        checked={checkNotExpired}
+                        onChange={(e) => setCheckNotExpired(e.target.checked)}
+                        className="mt-0.5"
+                      />
+                      <span>I confirmed the document is not expired.</span>
+                    </label>
+
+                    <label className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/80 p-3 text-sm text-black/70">
+                      <input
+                        type="checkbox"
+                        checked={checkIdentityMatch}
+                        onChange={(e) => setCheckIdentityMatch(e.target.checked)}
+                        className="mt-0.5"
+                      />
+                      <span>I confirmed the identity details are consistent with the agent record.</span>
+                    </label>
+
+                    <label className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/80 p-3 text-sm text-black/70">
+                      <input
+                        type="checkbox"
+                        checked={checkFraudReview}
+                        onChange={(e) => setCheckFraudReview(e.target.checked)}
+                        className="mt-0.5"
+                      />
+                      <span>I completed a fraud-risk review and found no disqualifying red flags.</span>
+                    </label>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-5 rounded-[24px] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                  Rejection should be used when the KYC evidence is missing, suspicious, inconsistent, unreadable, or expired.
+                </div>
+              )}
+
+              <div className="mt-5">
+                <div className="text-[11px] font-medium text-black/50">Reason (required)</div>
+                <textarea
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  rows={4}
+                  placeholder={
+                    review.kind === "approve_kyc"
+                      ? "Write the approval reason and notes..."
+                      : "Write the rejection reason clearly..."
+                  }
+                  className="mt-1 w-full resize-none rounded-2xl border border-black/10 bg-white/70 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.40)] focus:ring-4 focus:ring-[rgba(14,165,163,0.12)]"
+                />
+                {auditErr ? (
+                  <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{auditErr}</div>
+                ) : null}
+              </div>
+
+              <div className="mt-6 flex flex-wrap justify-end gap-2">
+                <button
+                  onClick={closeReview}
+                  disabled={!!busyId}
+                  className="rounded-2xl border border-black/10 bg-white/70 px-5 py-3 text-sm font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)] disabled:cursor-not-allowed disabled:text-black/40"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  onClick={confirmReview}
+                  disabled={!!busyId}
+                  className={`rounded-2xl px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                    review.kind === "approve_kyc"
+                      ? "bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] shadow-[0_16px_38px_rgba(10,79,99,0.28)] hover:shadow-[0_20px_46px_rgba(10,79,99,0.34)]"
+                      : "bg-gradient-to-r from-[#b91c1c] to-[#7f1d1d] shadow-[0_16px_38px_rgba(185,28,28,0.24)] hover:shadow-[0_20px_46px_rgba(185,28,28,0.30)]"
+                  }`}
+                >
+                  {busyId ? "Working…" : review.kind === "approve_kyc" ? "Confirm Approval" : "Confirm Rejection"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {enforce ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
