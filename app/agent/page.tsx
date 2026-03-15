@@ -34,6 +34,10 @@ type AgentRecord = {
   license_number: string | null;
   kyc_id_image_path: string | null;
   kyc_id_image_uploaded_at: string | null;
+  kyc_id_front_image_path: string | null;
+  kyc_id_front_image_uploaded_at: string | null;
+  kyc_id_back_image_path: string | null;
+  kyc_id_back_image_uploaded_at: string | null;
   kyc_submitted_at: string | null;
 };
 
@@ -482,8 +486,13 @@ export default function AgentPortalPage() {
 
   const [kycIdType, setKycIdType] = useState("drivers_license");
   const [kycIdNumber, setKycIdNumber] = useState("");
-  const [kycIdImageFile, setKycIdImageFile] = useState<File | null>(null);
-  const [kycIdImageLabel, setKycIdImageLabel] = useState("");
+
+  const [kycFrontImageFile, setKycFrontImageFile] = useState<File | null>(null);
+  const [kycFrontImageLabel, setKycFrontImageLabel] = useState("");
+  const [kycBackImageFile, setKycBackImageFile] = useState<File | null>(null);
+  const [kycBackImageLabel, setKycBackImageLabel] = useState("");
+  const [legacyImageLabel, setLegacyImageLabel] = useState("");
+
   const [kycConfirmGovId, setKycConfirmGovId] = useState(false);
   const [kycConfirmNotExpired, setKycConfirmNotExpired] = useState(false);
   const [kycConfirmTrueInfo, setKycConfirmTrueInfo] = useState(false);
@@ -587,7 +596,7 @@ export default function AgentPortalPage() {
     const { data, error } = await supabase
       .from("agents")
       .select(
-        "id,user_id,kyc_status,license_number,kyc_id_image_path,kyc_id_image_uploaded_at,kyc_submitted_at"
+        "id,user_id,kyc_status,license_number,kyc_id_image_path,kyc_id_image_uploaded_at,kyc_id_front_image_path,kyc_id_front_image_uploaded_at,kyc_id_back_image_path,kyc_id_back_image_uploaded_at,kyc_submitted_at"
       )
       .eq("user_id", agentUserId)
       .maybeSingle();
@@ -600,8 +609,13 @@ export default function AgentPortalPage() {
     const parsed = parseStoredIdValue(record?.license_number);
     setKycIdType(parsed.type);
     setKycIdNumber(parsed.number);
-    setKycIdImageFile(null);
-    setKycIdImageLabel(getUploadedImageLabel(record?.kyc_id_image_path));
+
+    setKycFrontImageFile(null);
+    setKycBackImageFile(null);
+
+    setKycFrontImageLabel(getUploadedImageLabel(record?.kyc_id_front_image_path));
+    setKycBackImageLabel(getUploadedImageLabel(record?.kyc_id_back_image_path));
+    setLegacyImageLabel(getUploadedImageLabel(record?.kyc_id_image_path));
 
     return record;
   }
@@ -755,33 +769,54 @@ export default function AgentPortalPage() {
     }
   }
 
-  function onKycIdImageChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setKycError(null);
-    setKycMessage(null);
-
-    const file = e.target.files?.[0] ?? null;
-
-    if (!file) {
-      setKycIdImageFile(null);
-      return;
-    }
+  function validateKycImageFile(file: File | null) {
+    if (!file) return null;
 
     const ext = getSafeImageExtension(file);
     if (!ext) {
-      setKycIdImageFile(null);
-      setKycError("Only JPG, JPEG, PNG, and WEBP image files are allowed.");
-      return;
+      return "Only JPG, JPEG, PNG, and WEBP image files are allowed.";
     }
 
     const maxSizeBytes = 5 * 1024 * 1024;
     if (file.size > maxSizeBytes) {
-      setKycIdImageFile(null);
-      setKycError("Government ID image must be 5MB or smaller.");
+      return "Government ID image must be 5MB or smaller.";
+    }
+
+    return null;
+  }
+
+  function onKycFrontImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setKycError(null);
+    setKycMessage(null);
+
+    const file = e.target.files?.[0] ?? null;
+    const validationError = validateKycImageFile(file);
+
+    if (validationError) {
+      setKycFrontImageFile(null);
+      setKycError(validationError);
       return;
     }
 
-    setKycIdImageFile(file);
-    setKycIdImageLabel(file.name);
+    setKycFrontImageFile(file);
+    setKycFrontImageLabel(file ? file.name : "");
+  }
+
+  function onKycBackImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setKycError(null);
+    setKycMessage(null);
+
+    const file = e.target.files?.[0] ?? null;
+    const validationError = validateKycImageFile(file);
+
+    if (validationError) {
+      setKycBackImageFile(null);
+      setKycError(validationError);
+      return;
+    }
+
+    setKycBackImageFile(file);
+    setKycBackImageLabel(file ? file.name : "");
   }
 
   async function submitKyc() {
@@ -804,19 +839,13 @@ export default function AgentPortalPage() {
       return;
     }
 
-    const hasExistingImage = !!String(agentRecord.kyc_id_image_path || "").trim();
-    if (!kycIdImageFile && !hasExistingImage) {
-      setKycError("Government ID image upload is required.");
-      return;
-    }
-
     setKycSubmitting(true);
 
     try {
       const { data: currentAgent, error: currentAgentError } = await supabase
         .from("agents")
         .select(
-          "id,user_id,kyc_status,license_number,kyc_id_image_path,kyc_id_image_uploaded_at,kyc_submitted_at"
+          "id,user_id,kyc_status,license_number,kyc_id_image_path,kyc_id_image_uploaded_at,kyc_id_front_image_path,kyc_id_front_image_uploaded_at,kyc_id_back_image_path,kyc_id_back_image_uploaded_at,kyc_submitted_at"
         )
         .eq("id", agentRecord.id)
         .maybeSingle();
@@ -825,54 +854,93 @@ export default function AgentPortalPage() {
       if (!currentAgent) throw new Error("Agent profile not found.");
 
       const liveStatus = String(currentAgent.kyc_status ?? "").toLowerCase();
+      const hasFrontOnFile = !!String(currentAgent.kyc_id_front_image_path ?? "").trim();
+      const hasBackOnFile = !!String(currentAgent.kyc_id_back_image_path ?? "").trim();
 
       if (liveStatus === "verified") {
         setAgentRecord(currentAgent as AgentRecord);
         const parsed = parseStoredIdValue(currentAgent.license_number);
         setKycIdType(parsed.type);
         setKycIdNumber(parsed.number);
-        setKycIdImageLabel(getUploadedImageLabel(currentAgent.kyc_id_image_path));
+        setKycFrontImageLabel(getUploadedImageLabel(currentAgent.kyc_id_front_image_path));
+        setKycBackImageLabel(getUploadedImageLabel(currentAgent.kyc_id_back_image_path));
+        setLegacyImageLabel(getUploadedImageLabel(currentAgent.kyc_id_image_path));
         setKycMessage("Your KYC is already verified. No new submission was made.");
         return;
       }
 
-      if (liveStatus === "pending") {
+      if (liveStatus === "pending" && hasFrontOnFile && hasBackOnFile && !kycFrontImageFile && !kycBackImageFile) {
         setAgentRecord(currentAgent as AgentRecord);
         const parsed = parseStoredIdValue(currentAgent.license_number);
         setKycIdType(parsed.type);
         setKycIdNumber(parsed.number);
-        setKycIdImageLabel(getUploadedImageLabel(currentAgent.kyc_id_image_path));
+        setKycFrontImageLabel(getUploadedImageLabel(currentAgent.kyc_id_front_image_path));
+        setKycBackImageLabel(getUploadedImageLabel(currentAgent.kyc_id_back_image_path));
+        setLegacyImageLabel(getUploadedImageLabel(currentAgent.kyc_id_image_path));
         setKycMessage("Your KYC is already under admin review. No new submission was made.");
         return;
       }
 
-      let finalImagePath = String(currentAgent.kyc_id_image_path || "").trim() || null;
-      let finalImageUploadedAt = currentAgent.kyc_id_image_uploaded_at || null;
-
-      if (kycIdImageFile) {
-        const ext = getSafeImageExtension(kycIdImageFile);
-        if (!ext) {
-          throw new Error("Only JPG, JPEG, PNG, and WEBP image files are allowed.");
-        }
-
-        const safeType = sanitizeFileNamePart(kycIdType) || "government-id";
-        const storagePath = `${currentAgent.user_id}/kyc-${safeType}.${ext}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("agent-kyc")
-          .upload(storagePath, kycIdImageFile, {
-            upsert: true,
-            contentType: kycIdImageFile.type || undefined,
-          });
-
-        if (uploadError) throw uploadError;
-
-        finalImagePath = storagePath;
-        finalImageUploadedAt = new Date().toISOString();
+      if (!kycFrontImageFile && !hasFrontOnFile) {
+        throw new Error("Front image of the government ID is required.");
       }
 
-      if (!finalImagePath) {
-        throw new Error("Government ID image upload is required.");
+      if (!kycBackImageFile && !hasBackOnFile) {
+        throw new Error("Back image of the government ID is required.");
+      }
+
+      let finalFrontPath = String(currentAgent.kyc_id_front_image_path || "").trim() || null;
+      let finalFrontUploadedAt = currentAgent.kyc_id_front_image_uploaded_at || null;
+
+      let finalBackPath = String(currentAgent.kyc_id_back_image_path || "").trim() || null;
+      let finalBackUploadedAt = currentAgent.kyc_id_back_image_uploaded_at || null;
+
+      const safeType = sanitizeFileNamePart(kycIdType) || "government-id";
+
+      if (kycFrontImageFile) {
+        const ext = getSafeImageExtension(kycFrontImageFile);
+        if (!ext) throw new Error("Front image must be JPG, JPEG, PNG, or WEBP.");
+
+        const frontStoragePath = `${currentAgent.user_id}/kyc-front-${safeType}.${ext}`;
+
+        const { error: uploadFrontError } = await supabase.storage
+          .from("agent-kyc")
+          .upload(frontStoragePath, kycFrontImageFile, {
+            upsert: true,
+            contentType: kycFrontImageFile.type || undefined,
+          });
+
+        if (uploadFrontError) throw uploadFrontError;
+
+        finalFrontPath = frontStoragePath;
+        finalFrontUploadedAt = new Date().toISOString();
+      }
+
+      if (kycBackImageFile) {
+        const ext = getSafeImageExtension(kycBackImageFile);
+        if (!ext) throw new Error("Back image must be JPG, JPEG, PNG, or WEBP.");
+
+        const backStoragePath = `${currentAgent.user_id}/kyc-back-${safeType}.${ext}`;
+
+        const { error: uploadBackError } = await supabase.storage
+          .from("agent-kyc")
+          .upload(backStoragePath, kycBackImageFile, {
+            upsert: true,
+            contentType: kycBackImageFile.type || undefined,
+          });
+
+        if (uploadBackError) throw uploadBackError;
+
+        finalBackPath = backStoragePath;
+        finalBackUploadedAt = new Date().toISOString();
+      }
+
+      if (!finalFrontPath) {
+        throw new Error("Front image of the government ID is required.");
+      }
+
+      if (!finalBackPath) {
+        throw new Error("Back image of the government ID is required.");
       }
 
       const normalizedNumber = `${kycIdType}:${cleanNumber}`;
@@ -883,13 +951,15 @@ export default function AgentPortalPage() {
         .update({
           license_number: normalizedNumber,
           kyc_status: "pending",
-          kyc_id_image_path: finalImagePath,
-          kyc_id_image_uploaded_at: finalImageUploadedAt,
+          kyc_id_front_image_path: finalFrontPath,
+          kyc_id_front_image_uploaded_at: finalFrontUploadedAt,
+          kyc_id_back_image_path: finalBackPath,
+          kyc_id_back_image_uploaded_at: finalBackUploadedAt,
           kyc_submitted_at: submittedAt,
         })
         .eq("id", agentRecord.id)
         .select(
-          "id,user_id,kyc_status,license_number,kyc_id_image_path,kyc_id_image_uploaded_at,kyc_submitted_at"
+          "id,user_id,kyc_status,license_number,kyc_id_image_path,kyc_id_image_uploaded_at,kyc_id_front_image_path,kyc_id_front_image_uploaded_at,kyc_id_back_image_path,kyc_id_back_image_uploaded_at,kyc_submitted_at"
         )
         .maybeSingle();
 
@@ -901,10 +971,13 @@ export default function AgentPortalPage() {
       }
 
       setAgentRecord(updatedAgent as AgentRecord);
-      setKycIdImageFile(null);
-      setKycIdImageLabel(getUploadedImageLabel(updatedAgent.kyc_id_image_path));
+      setKycFrontImageFile(null);
+      setKycBackImageFile(null);
+      setKycFrontImageLabel(getUploadedImageLabel(updatedAgent.kyc_id_front_image_path));
+      setKycBackImageLabel(getUploadedImageLabel(updatedAgent.kyc_id_back_image_path));
+      setLegacyImageLabel(getUploadedImageLabel(updatedAgent.kyc_id_image_path));
       setKycMessage(
-        "KYC submitted for admin review with a government ID image. Approval only happens after manual trust checks."
+        "KYC submitted for admin review with required front and back government ID images."
       );
       await load();
     } catch (e: any) {
@@ -917,7 +990,11 @@ export default function AgentPortalPage() {
   const isKycVerified = agentRecord?.kyc_status === "verified";
   const isKycPending = agentRecord?.kyc_status === "pending";
   const isKycRejected = agentRecord?.kyc_status === "rejected";
-  const hasStoredKycImage = !!String(agentRecord?.kyc_id_image_path || "").trim();
+
+  const hasFrontImageOnFile = !!String(agentRecord?.kyc_id_front_image_path || "").trim();
+  const hasBackImageOnFile = !!String(agentRecord?.kyc_id_back_image_path || "").trim();
+  const hasLegacySingleImage = !!String(agentRecord?.kyc_id_image_path || "").trim();
+  const pendingFullySubmitted = isKycPending && hasFrontImageOnFile && hasBackImageOnFile;
 
   const paidCount = useMemo(() => rows.filter((r) => r.status === "paid").length, [rows]);
   const scheduledCount = useMemo(() => rows.filter((r) => r.status === "scheduled").length, [rows]);
@@ -1039,13 +1116,19 @@ export default function AgentPortalPage() {
 
             {isKycRejected ? (
               <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                Your previous KYC review was rejected. Correct your information and submit again with a valid non-expired government ID and image upload.
+                Your previous KYC review was rejected. Correct your information and submit again with valid front and back government ID images.
               </div>
             ) : null}
 
-            {isKycPending ? (
+            {pendingFullySubmitted ? (
               <div className="mb-4 rounded-2xl border border-[rgba(14,165,163,0.20)] bg-[rgba(14,165,163,0.08)] p-4 text-sm text-[#0a4f63]">
                 Your KYC is currently under admin review. Scheduling and completion actions remain locked until approval.
+              </div>
+            ) : null}
+
+            {isKycPending && !pendingFullySubmitted ? (
+              <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                Your earlier KYC submission is missing the new required front and back ID images. Complete both uploads and submit again.
               </div>
             ) : null}
 
@@ -1053,7 +1136,7 @@ export default function AgentPortalPage() {
               <div className="rounded-[24px] border border-black/10 bg-white/80 p-5">
                 <div className="text-sm font-semibold text-[#0b1f2a]">KYC submission</div>
                 <div className="mt-1 text-sm text-black/55">
-                  Current launch requirement: submit your government ID type, ID number, and a clear image of the original government ID for manual admin review.
+                  Current launch requirement: submit your government ID type, ID number, front image, and back image for manual admin review.
                 </div>
 
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -1064,7 +1147,7 @@ export default function AgentPortalPage() {
                     <select
                       value={kycIdType}
                       onChange={(e) => setKycIdType(e.target.value)}
-                      disabled={kycSubmitting || isKycPending}
+                      disabled={kycSubmitting || pendingFullySubmitted}
                       className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-black/20 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <option value="nin">NIN</option>
@@ -1081,51 +1164,95 @@ export default function AgentPortalPage() {
                     <input
                       value={kycIdNumber}
                       onChange={(e) => setKycIdNumber(e.target.value)}
-                      disabled={kycSubmitting || isKycPending}
+                      disabled={kycSubmitting || pendingFullySubmitted}
                       placeholder="Enter your government ID number"
                       className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-black/20 disabled:cursor-not-allowed disabled:opacity-60"
                     />
                   </label>
                 </div>
 
-                <div className="mt-5">
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-black/45">
-                    Government ID image upload
-                  </div>
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <div>
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-black/45">
+                      Front image upload
+                    </div>
 
-                  <label className="block">
                     <input
                       type="file"
                       accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
-                      onChange={onKycIdImageChange}
-                      disabled={kycSubmitting || isKycPending}
+                      onChange={onKycFrontImageChange}
+                      disabled={kycSubmitting || pendingFullySubmitted}
                       className="block w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-[#0b1f2a] file:mr-4 file:rounded-xl file:border-0 file:bg-[rgba(14,165,163,0.12)] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#0a4f63] disabled:cursor-not-allowed disabled:opacity-60"
                     />
-                  </label>
 
-                  <div className="mt-2 text-xs text-black/50">
-                    Required. Upload a clear JPG, JPEG, PNG, or WEBP image of the original government ID. Max 5MB.
+                    <div className="mt-2 text-xs text-black/50">
+                      Required. Upload the front of the original government ID. Max 5MB.
+                    </div>
+
+                    {kycFrontImageFile ? (
+                      <div className="mt-3 rounded-2xl border border-[rgba(14,165,163,0.20)] bg-[rgba(14,165,163,0.08)] p-3 text-sm text-[#0a4f63]">
+                        Selected front image: <span className="font-semibold">{kycFrontImageLabel}</span>
+                      </div>
+                    ) : hasFrontImageOnFile ? (
+                      <div className="mt-3 rounded-2xl border border-black/10 bg-white/80 p-3 text-sm text-black/65">
+                        Existing front image on file: <span className="font-semibold text-[#0b1f2a]">{kycFrontImageLabel}</span>
+                        {agentRecord?.kyc_id_front_image_uploaded_at ? (
+                          <span className="block mt-1 text-xs text-black/50">
+                            Uploaded: {formatDt(agentRecord.kyc_id_front_image_uploaded_at)}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        No front image uploaded yet.
+                      </div>
+                    )}
                   </div>
 
-                  {kycIdImageFile ? (
-                    <div className="mt-3 rounded-2xl border border-[rgba(14,165,163,0.20)] bg-[rgba(14,165,163,0.08)] p-3 text-sm text-[#0a4f63]">
-                      Selected image: <span className="font-semibold">{kycIdImageLabel}</span>
+                  <div>
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-black/45">
+                      Back image upload
                     </div>
-                  ) : hasStoredKycImage ? (
-                    <div className="mt-3 rounded-2xl border border-black/10 bg-white/80 p-3 text-sm text-black/65">
-                      Existing image on file: <span className="font-semibold text-[#0b1f2a]">{kycIdImageLabel}</span>
-                      {agentRecord?.kyc_id_image_uploaded_at ? (
-                        <span className="block mt-1 text-xs text-black/50">
-                          Uploaded: {formatDt(agentRecord.kyc_id_image_uploaded_at)}
-                        </span>
-                      ) : null}
+
+                    <input
+                      type="file"
+                      accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                      onChange={onKycBackImageChange}
+                      disabled={kycSubmitting || pendingFullySubmitted}
+                      className="block w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-[#0b1f2a] file:mr-4 file:rounded-xl file:border-0 file:bg-[rgba(14,165,163,0.12)] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#0a4f63] disabled:cursor-not-allowed disabled:opacity-60"
+                    />
+
+                    <div className="mt-2 text-xs text-black/50">
+                      Required. Upload the back of the original government ID. Max 5MB.
                     </div>
-                  ) : (
-                    <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                      No government ID image uploaded yet.
-                    </div>
-                  )}
+
+                    {kycBackImageFile ? (
+                      <div className="mt-3 rounded-2xl border border-[rgba(14,165,163,0.20)] bg-[rgba(14,165,163,0.08)] p-3 text-sm text-[#0a4f63]">
+                        Selected back image: <span className="font-semibold">{kycBackImageLabel}</span>
+                      </div>
+                    ) : hasBackImageOnFile ? (
+                      <div className="mt-3 rounded-2xl border border-black/10 bg-white/80 p-3 text-sm text-black/65">
+                        Existing back image on file: <span className="font-semibold text-[#0b1f2a]">{kycBackImageLabel}</span>
+                        {agentRecord?.kyc_id_back_image_uploaded_at ? (
+                          <span className="block mt-1 text-xs text-black/50">
+                            Uploaded: {formatDt(agentRecord.kyc_id_back_image_uploaded_at)}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        No back image uploaded yet.
+                      </div>
+                    )}
+                  </div>
                 </div>
+
+                {hasLegacySingleImage ? (
+                  <div className="mt-4 rounded-2xl border border-black/10 bg-white/70 p-3 text-sm text-black/60">
+                    Legacy single-image file on record: <span className="font-semibold text-[#0b1f2a]">{legacyImageLabel}</span>.
+                    Front and back uploads are now required for active KYC review.
+                  </div>
+                ) : null}
 
                 <div className="mt-5 grid gap-3">
                   <KycChecklistItem checked={kycConfirmGovId} onChange={setKycConfirmGovId}>
@@ -1144,10 +1271,10 @@ export default function AgentPortalPage() {
                 <div className="mt-5 flex flex-wrap gap-3">
                   <button
                     onClick={submitKyc}
-                    disabled={kycSubmitting || isKycPending}
+                    disabled={kycSubmitting || pendingFullySubmitted}
                     className="rounded-2xl bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] px-6 py-3 text-sm font-semibold text-white shadow-[0_16px_38px_rgba(10,79,99,0.28)] transition hover:shadow-[0_20px_46px_rgba(10,79,99,0.34)] disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {kycSubmitting ? "Submitting..." : isKycPending ? "Under Review" : "Submit KYC"}
+                    {kycSubmitting ? "Submitting..." : pendingFullySubmitted ? "Under Review" : "Submit KYC"}
                   </button>
                 </div>
               </div>
@@ -1159,7 +1286,7 @@ export default function AgentPortalPage() {
                 />
                 <LandingInfoCard
                   title="Required evidence"
-                  body="Keyvera now requires the actual government ID image upload in addition to the ID number before agent KYC can be submitted."
+                  body="Keyvera now requires both the front and back government ID images in addition to the ID number before agent KYC can be submitted."
                 />
                 <LandingInfoCard
                   title="Why this matters"
