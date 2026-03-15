@@ -313,21 +313,47 @@ export default function AdminAgentsPage() {
     resetReviewState();
   };
 
-  const updateKycStatus = async (row: AgentRow, status: "verified" | "rejected", auditReason: string) => {
+  const updateKycStatus = async (
+    row: AgentRow,
+    status: "verified" | "rejected",
+    auditReason: string
+  ): Promise<boolean> => {
     setErrorMsg("");
     setAuditErr(null);
     setBusyId(row.id);
 
     try {
       const actorUserId = await getActorUserIdOrRedirect(router);
-      if (!actorUserId) return;
+      if (!actorUserId) return false;
 
       const before = await fetchAgentSnapshot(row.id);
 
-      const { error } = await supabase.from("agents").update({ kyc_status: status }).eq("id", row.id);
+      const { data: updatedRow, error } = await supabase
+        .from("agents")
+        .update({ kyc_status: status })
+        .eq("id", row.id)
+        .select("id,user_id,kyc_status,license_number,created_at")
+        .maybeSingle();
+
       if (error) throw error;
 
-      const after = await fetchAgentSnapshot(row.id);
+      const after = updatedRow ?? (await fetchAgentSnapshot(row.id));
+
+      if (!after) {
+        const msg = "KYC update could not be verified because the updated agent record could not be reloaded.";
+        setErrorMsg(msg);
+        setAuditErr(msg);
+        await load();
+        return false;
+      }
+
+      if (after.kyc_status !== status) {
+        const msg = `KYC update did not persist. Expected "${status}" but record is still "${after.kyc_status}".`;
+        setErrorMsg(msg);
+        setAuditErr(msg);
+        await load();
+        return false;
+      }
 
       try {
         await logAudit({
@@ -344,8 +370,12 @@ export default function AdminAgentsPage() {
       }
 
       await load();
+      return true;
     } catch (e: any) {
-      setErrorMsg(e?.message ?? "Failed to update KYC status.");
+      const msg = e?.message ?? "Failed to update KYC status.";
+      setErrorMsg(msg);
+      setAuditErr(msg);
+      return false;
     } finally {
       setBusyId(null);
     }
@@ -381,14 +411,18 @@ export default function AdminAgentsPage() {
         `Approve agent KYC. ${cleanReason} | ` +
         `Checks confirmed: government ID reviewed, non-expired document confirmed, identity match reviewed, fraud review completed.`;
 
-      await updateKycStatus(currentRow, "verified", composedReason);
-      closeReview();
+      const ok = await updateKycStatus(currentRow, "verified", composedReason);
+      if (ok) {
+        closeReview();
+      }
       return;
     }
 
     const rejectReason = `Reject agent KYC. ${cleanReason}`;
-    await updateKycStatus(currentRow, "rejected", rejectReason);
-    closeReview();
+    const ok = await updateKycStatus(currentRow, "rejected", rejectReason);
+    if (ok) {
+      closeReview();
+    }
   };
 
   const openEnforcement = (kind: "disable_agent" | "enable_agent", row: AgentRow) => {
