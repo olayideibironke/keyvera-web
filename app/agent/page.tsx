@@ -101,6 +101,34 @@ function shortId(id: string) {
   return v.length <= 10 ? v : `${v.slice(0, 6)}…${v.slice(-4)}`;
 }
 
+function parseStoredIdValue(value: string | null | undefined) {
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    return {
+      type: "drivers_license",
+      number: "",
+    };
+  }
+
+  const idx = raw.indexOf(":");
+  if (idx === -1) {
+    return {
+      type: "drivers_license",
+      number: raw,
+    };
+  }
+
+  const maybeType = raw.slice(0, idx).trim();
+  const maybeNumber = raw.slice(idx + 1).trim();
+
+  const allowedTypes = new Set(["nin", "drivers_license", "international_passport", "voters_card"]);
+
+  return {
+    type: allowedTypes.has(maybeType) ? maybeType : "drivers_license",
+    number: maybeNumber,
+  };
+}
+
 function BadgeIcon({ size = 44 }: { size?: number }) {
   return (
     <div
@@ -291,11 +319,11 @@ function KycChecklistItem({
 export default function AgentPortalPage() {
   const router = useRouter();
 
-  const [authResolved, setAuthResolved] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   const [hasSession, setHasSession] = useState(false);
-  const [isAgentRole, setIsAgentRole] = useState(false);
+  const [authorized, setAuthorized] = useState(false);
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<InspectionRow[]>([]);
   const [propertyMap, setPropertyMap] = useState<Record<string, PropertyMini>>({});
   const [agentRecord, setAgentRecord] = useState<AgentRecord | null>(null);
@@ -336,6 +364,100 @@ export default function AgentPortalPage() {
     }
   }
 
+  async function resolveAgentAccess() {
+    const {
+      data: { session },
+      error: sessionErr,
+    } = await supabase.auth.getSession();
+
+    if (sessionErr) throw sessionErr;
+
+    if (!session?.user) {
+      setHasSession(false);
+      setAuthorized(false);
+      setAuthChecked(true);
+      return null;
+    }
+
+    const user = session.user;
+    setHasSession(true);
+
+    const { data: profile, error: profErr } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (profErr) throw profErr;
+
+    const role = String(profile?.role || "").toLowerCase();
+
+    if (role && role !== "agent") {
+      setAuthorized(false);
+      setAuthChecked(true);
+
+      if (role === "landlord") {
+        router.replace("/landlord");
+        return null;
+      }
+
+      if (role === "tenant") {
+        router.replace("/tenant");
+        return null;
+      }
+
+      if (role === "admin") {
+        router.replace("/admin");
+        return null;
+      }
+
+      return null;
+    }
+
+    if (role === "agent") {
+      setAuthorized(true);
+      setAuthChecked(true);
+      return user;
+    }
+
+    setAuthorized(false);
+    setAuthChecked(true);
+    return null;
+  }
+
+  async function loadAgentRecord(agentUserId: string) {
+    const { data, error } = await supabase
+      .from("agents")
+      .select("id,user_id,kyc_status,license_number")
+      .eq("user_id", agentUserId)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    const record = (data ?? null) as AgentRecord | null;
+    setAgentRecord(record);
+
+    const parsed = parseStoredIdValue(record?.license_number);
+    setKycIdType(parsed.type);
+    setKycIdNumber(parsed.number);
+
+    return record;
+  }
+
+  async function loadAuthorizedPropertyIds(agentId: string) {
+    const { data, error } = await supabase
+      .from("agent_property_authorizations")
+      .select("property_id")
+      .eq("agent_id", agentId)
+      .eq("status", "approved");
+
+    if (error) throw error;
+
+    const ids = (data ?? []).map((r: any) => r.property_id as string);
+    setAuthorizedPropertyIds(ids);
+    return ids;
+  }
+
   async function hydrateTenantNames(list: InspectionRow[]) {
     const tenantIds = Array.from(new Set(list.map((r) => r.tenant_user_id).filter(Boolean)));
 
@@ -356,39 +478,28 @@ export default function AgentPortalPage() {
     }));
   }
 
-  async function loadAuthedAgentView(userId: string) {
+  async function load() {
     setLoading(true);
 
     try {
-      const { data: agent, error: agentErr } = await supabase
-        .from("agents")
-        .select("id,user_id,kyc_status,license_number")
-        .eq("user_id", userId)
-        .maybeSingle();
+      const agentUser = await resolveAgentAccess();
+      if (!agentUser) {
+        setRows([]);
+        setPropertyMap({});
+        setAgentRecord(null);
+        setAuthorizedPropertyIds([]);
+        return;
+      }
 
-      if (agentErr) throw agentErr;
-
-      const agentRow = (agent ?? null) as AgentRecord | null;
-      setAgentRecord(agentRow);
-      setKycIdNumber(agentRow?.license_number ?? "");
-
-      if (!agentRow?.id) {
+      const agent = await loadAgentRecord(agentUser.id);
+      if (!agent) {
         setRows([]);
         setPropertyMap({});
         setAuthorizedPropertyIds([]);
         return;
       }
 
-      const { data: authRows, error: authErr } = await supabase
-        .from("agent_property_authorizations")
-        .select("property_id")
-        .eq("agent_id", agentRow.id)
-        .eq("status", "approved");
-
-      if (authErr) throw authErr;
-
-      const propertyIds = (authRows ?? []).map((r: any) => String(r.property_id));
-      setAuthorizedPropertyIds(propertyIds);
+      const propertyIds = await loadAuthorizedPropertyIds(agent.id);
 
       if (!propertyIds.length) {
         setRows([]);
@@ -396,16 +507,16 @@ export default function AgentPortalPage() {
         return;
       }
 
-      const { data: inspections, error: inspectionsErr } = await supabase
+      const { data, error } = await supabase
         .from("inspection_requests")
         .select("id,property_id,tenant_user_id,status,inspection_fee_ngn,created_at,scheduled_at,completed_at")
         .in("status", ["paid", "scheduled"])
         .in("property_id", propertyIds)
         .order("created_at");
 
-      if (inspectionsErr) throw inspectionsErr;
+      if (error) throw error;
 
-      const hydrated = await hydrateTenantNames((inspections ?? []) as InspectionRow[]);
+      const hydrated = await hydrateTenantNames((data ?? []) as InspectionRow[]);
       setRows(hydrated);
 
       const propIds = Array.from(new Set(hydrated.map((r) => r.property_id).filter(Boolean)));
@@ -429,82 +540,17 @@ export default function AgentPortalPage() {
 
       setPropertyMap(map);
     } finally {
+      setAuthChecked(true);
       setLoading(false);
-    }
-  }
-
-  async function resolvePageState() {
-    try {
-      const {
-        data: { session },
-        error: sessionErr,
-      } = await supabase.auth.getSession();
-
-      if (sessionErr) throw sessionErr;
-
-      if (!session?.user) {
-        setHasSession(false);
-        setIsAgentRole(false);
-        setAgentRecord(null);
-        setRows([]);
-        setPropertyMap({});
-        setAuthorizedPropertyIds([]);
-        return;
-      }
-
-      setHasSession(true);
-
-      const user = session.user;
-
-      const { data: profile, error: profErr } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (profErr) throw profErr;
-
-      const role = String(profile?.role || "").toLowerCase();
-
-      if (role === "landlord") {
-        router.replace("/landlord");
-        return;
-      }
-
-      if (role === "tenant") {
-        router.replace("/tenant");
-        return;
-      }
-
-      if (role === "admin") {
-        router.replace("/admin");
-        return;
-      }
-
-      if (role !== "agent") {
-        setIsAgentRole(false);
-        setAgentRecord(null);
-        setRows([]);
-        setPropertyMap({});
-        setAuthorizedPropertyIds([]);
-        return;
-      }
-
-      setIsAgentRole(true);
-      await loadAuthedAgentView(user.id);
-    } finally {
-      setAuthResolved(true);
     }
   }
 
   useEffect(() => {
     loadRevenueRules();
-    resolvePageState();
-
+    load();
     const { data: sub } = supabase.auth.onAuthStateChange(() => {
-      resolvePageState();
+      load();
     });
-
     return () => sub?.subscription?.unsubscribe();
   }, []);
 
@@ -517,7 +563,7 @@ export default function AgentPortalPage() {
     setActionId(id);
     try {
       await rpcCall("agent_mark_inspection_scheduled", id);
-      await resolvePageState();
+      await load();
     } finally {
       setActionId(null);
     }
@@ -527,7 +573,7 @@ export default function AgentPortalPage() {
     setActionId(id);
     try {
       await rpcCall("agent_mark_inspection_completed", id);
-      await resolvePageState();
+      await load();
     } finally {
       setActionId(null);
     }
@@ -537,7 +583,7 @@ export default function AgentPortalPage() {
     setActionId(id);
     try {
       await rpcCall("agent_cancel_inspection", id);
-      await resolvePageState();
+      await load();
     } finally {
       setActionId(null);
     }
@@ -566,22 +612,59 @@ export default function AgentPortalPage() {
     setKycSubmitting(true);
 
     try {
+      const { data: currentAgent, error: currentAgentError } = await supabase
+        .from("agents")
+        .select("id,user_id,kyc_status,license_number")
+        .eq("id", agentRecord.id)
+        .maybeSingle();
+
+      if (currentAgentError) throw currentAgentError;
+      if (!currentAgent) throw new Error("Agent profile not found.");
+
+      const liveStatus = String(currentAgent.kyc_status ?? "").toLowerCase();
+
+      if (liveStatus === "verified") {
+        setAgentRecord(currentAgent as AgentRecord);
+        const parsed = parseStoredIdValue(currentAgent.license_number);
+        setKycIdType(parsed.type);
+        setKycIdNumber(parsed.number);
+        setKycMessage("Your KYC is already verified. No new submission was made.");
+        return;
+      }
+
+      if (liveStatus === "pending") {
+        setAgentRecord(currentAgent as AgentRecord);
+        const parsed = parseStoredIdValue(currentAgent.license_number);
+        setKycIdType(parsed.type);
+        setKycIdNumber(parsed.number);
+        setKycMessage("Your KYC is already under admin review. No new submission was made.");
+        return;
+      }
+
       const normalizedNumber = `${kycIdType}:${cleanNumber}`;
 
-      const { error } = await supabase
+      const { data: updatedAgent, error: updateError } = await supabase
         .from("agents")
         .update({
           license_number: normalizedNumber,
           kyc_status: "pending",
         })
-        .eq("id", agentRecord.id);
+        .eq("id", agentRecord.id)
+        .select("id,user_id,kyc_status,license_number")
+        .maybeSingle();
 
-      if (error) throw error;
+      if (updateError) throw updateError;
+      if (!updatedAgent) throw new Error("KYC submission could not be verified after update.");
 
+      if (String(updatedAgent.kyc_status ?? "").toLowerCase() !== "pending") {
+        throw new Error("KYC submission did not persist as pending.");
+      }
+
+      setAgentRecord(updatedAgent as AgentRecord);
       setKycMessage(
         "KYC submitted for admin review. Approval only happens after manual trust checks, including document validity review."
       );
-      await resolvePageState();
+      await load();
     } catch (e: any) {
       setKycError(e?.message ?? "Failed to submit KYC.");
     } finally {
@@ -605,14 +688,8 @@ export default function AgentPortalPage() {
     )}.`;
   }, [onboardingFee]);
 
-  if (!authResolved) {
-    return (
-      <main className="min-h-[calc(100vh-140px)]">
-        <div className="rounded-[28px] border border-black/10 bg-white/70 p-8 text-sm text-black/60 shadow-[0_16px_46px_rgba(11,31,42,0.08)] backdrop-blur-xl">
-          Loading…
-        </div>
-      </main>
-    );
+  if (!authChecked) {
+    return null;
   }
 
   if (!hasSession) {
@@ -722,7 +799,7 @@ export default function AgentPortalPage() {
     );
   }
 
-  if (!isAgentRole) {
+  if (!authorized) {
     return null;
   }
 
@@ -770,7 +847,7 @@ export default function AgentPortalPage() {
 
           <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
             <button
-              onClick={resolvePageState}
+              onClick={load}
               className="rounded-2xl border border-black/10 bg-white/70 px-5 py-3 text-sm font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_12px_30px_rgba(11,31,42,0.10)]"
             >
               Refresh
