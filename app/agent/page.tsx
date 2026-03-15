@@ -291,11 +291,11 @@ function KycChecklistItem({
 export default function AgentPortalPage() {
   const router = useRouter();
 
-  const [authChecked, setAuthChecked] = useState(false);
+  const [authResolved, setAuthResolved] = useState(false);
   const [hasSession, setHasSession] = useState(false);
-  const [authorized, setAuthorized] = useState(false);
+  const [isAgentRole, setIsAgentRole] = useState(false);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<InspectionRow[]>([]);
   const [propertyMap, setPropertyMap] = useState<Record<string, PropertyMini>>({});
   const [agentRecord, setAgentRecord] = useState<AgentRecord | null>(null);
@@ -325,7 +325,7 @@ export default function AgentPortalPage() {
       if (error) throw error;
 
       if (data?.setting_value) {
-        setRules(toRules(data.setting_value));
+        setRules(toRules(data.setting_value);
       } else {
         setRules(DEFAULT_RULES);
       }
@@ -334,96 +334,6 @@ export default function AgentPortalPage() {
     } finally {
       setRulesLoaded(true);
     }
-  }
-
-  async function resolveAgentAccess() {
-    const {
-      data: { session },
-      error: sessionErr,
-    } = await supabase.auth.getSession();
-
-    if (sessionErr) throw sessionErr;
-
-    if (!session?.user) {
-      setHasSession(false);
-      setAuthorized(false);
-      setAuthChecked(true);
-      return null;
-    }
-
-    const user = session.user;
-    setHasSession(true);
-
-    const { data: profile, error: profErr } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (profErr) throw profErr;
-
-    const role = String(profile?.role || "").toLowerCase();
-
-    if (role && role !== "agent") {
-      setAuthorized(false);
-      setAuthChecked(true);
-
-      if (role === "landlord") {
-        router.replace("/landlord");
-        return null;
-      }
-
-      if (role === "tenant") {
-        router.replace("/tenant");
-        return null;
-      }
-
-      if (role === "admin") {
-        router.replace("/admin");
-        return null;
-      }
-
-      return null;
-    }
-
-    if (role === "agent") {
-      setAuthorized(true);
-      setAuthChecked(true);
-      return user;
-    }
-
-    setAuthorized(false);
-    setAuthChecked(true);
-    return null;
-  }
-
-  async function loadAgentRecord(agentUserId: string) {
-    const { data, error } = await supabase
-      .from("agents")
-      .select("id,user_id,kyc_status,license_number")
-      .eq("user_id", agentUserId)
-      .maybeSingle();
-
-    if (error) throw error;
-
-    const record = (data ?? null) as AgentRecord | null;
-    setAgentRecord(record);
-    setKycIdNumber(record?.license_number ?? "");
-    return record;
-  }
-
-  async function loadAuthorizedPropertyIds(agentId: string) {
-    const { data, error } = await supabase
-      .from("agent_property_authorizations")
-      .select("property_id")
-      .eq("agent_id", agentId)
-      .eq("status", "approved");
-
-    if (error) throw error;
-
-    const ids = (data ?? []).map((r: any) => r.property_id as string);
-    setAuthorizedPropertyIds(ids);
-    return ids;
   }
 
   async function hydrateTenantNames(list: InspectionRow[]) {
@@ -446,28 +356,39 @@ export default function AgentPortalPage() {
     }));
   }
 
-  async function load() {
+  async function loadAuthedAgentView(userId: string) {
     setLoading(true);
 
     try {
-      const agentUser = await resolveAgentAccess();
-      if (!agentUser) {
+      const { data: agent, error: agentErr } = await supabase
+        .from("agents")
+        .select("id,user_id,kyc_status,license_number")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (agentErr) throw agentErr;
+
+      const agentRow = (agent ?? null) as AgentRecord | null;
+      setAgentRecord(agentRow);
+      setKycIdNumber(agentRow?.license_number ?? "");
+
+      if (!agentRow?.id) {
         setRows([]);
         setPropertyMap({});
-        setAgentRecord(null);
         setAuthorizedPropertyIds([]);
         return;
       }
 
-      const agent = await loadAgentRecord(agentUser.id);
-      if (!agent) {
-        setRows([]);
-        setPropertyMap({});
-        setAuthorizedPropertyIds([]);
-        return;
-      }
+      const { data: authRows, error: authErr } = await supabase
+        .from("agent_property_authorizations")
+        .select("property_id")
+        .eq("agent_id", agentRow.id)
+        .eq("status", "approved");
 
-      const propertyIds = await loadAuthorizedPropertyIds(agent.id);
+      if (authErr) throw authErr;
+
+      const propertyIds = (authRows ?? []).map((r: any) => String(r.property_id));
+      setAuthorizedPropertyIds(propertyIds);
 
       if (!propertyIds.length) {
         setRows([]);
@@ -475,16 +396,16 @@ export default function AgentPortalPage() {
         return;
       }
 
-      const { data, error } = await supabase
+      const { data: inspections, error: inspectionsErr } = await supabase
         .from("inspection_requests")
         .select("id,property_id,tenant_user_id,status,inspection_fee_ngn,created_at,scheduled_at,completed_at")
         .in("status", ["paid", "scheduled"])
         .in("property_id", propertyIds)
         .order("created_at");
 
-      if (error) throw error;
+      if (inspectionsErr) throw inspectionsErr;
 
-      const hydrated = await hydrateTenantNames((data ?? []) as InspectionRow[]);
+      const hydrated = await hydrateTenantNames((inspections ?? []) as InspectionRow[]);
       setRows(hydrated);
 
       const propIds = Array.from(new Set(hydrated.map((r) => r.property_id).filter(Boolean)));
@@ -508,19 +429,83 @@ export default function AgentPortalPage() {
 
       setPropertyMap(map);
     } finally {
-      setAuthChecked(true);
       setLoading(false);
+    }
+  }
+
+  async function resolvePageState() {
+    try {
+      const {
+        data: { session },
+        error: sessionErr,
+      } = await supabase.auth.getSession();
+
+      if (sessionErr) throw sessionErr;
+
+      if (!session?.user) {
+        setHasSession(false);
+        setIsAgentRole(false);
+        setAgentRecord(null);
+        setRows([]);
+        setPropertyMap({});
+        setAuthorizedPropertyIds([]);
+        return;
+      }
+
+      setHasSession(true);
+
+      const user = session.user;
+
+      const { data: profile, error: profErr } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (profErr) throw profErr;
+
+      const role = String(profile?.role || "").toLowerCase();
+
+      if (role === "landlord") {
+        router.replace("/landlord");
+        return;
+      }
+
+      if (role === "tenant") {
+        router.replace("/tenant");
+        return;
+      }
+
+      if (role === "admin") {
+        router.replace("/admin");
+        return;
+      }
+
+      if (role !== "agent") {
+        setIsAgentRole(false);
+        setAgentRecord(null);
+        setRows([]);
+        setPropertyMap({});
+        setAuthorizedPropertyIds([]);
+        return;
+      }
+
+      setIsAgentRole(true);
+      await loadAuthedAgentView(user.id);
+    } finally {
+      setAuthResolved(true);
     }
   }
 
   useEffect(() => {
     loadRevenueRules();
-    load();
+    resolvePageState();
+
     const { data: sub } = supabase.auth.onAuthStateChange(() => {
-      load();
+      resolvePageState();
     });
+
     return () => sub?.subscription?.unsubscribe();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function rpcCall(fn: string, id: string) {
@@ -532,7 +517,7 @@ export default function AgentPortalPage() {
     setActionId(id);
     try {
       await rpcCall("agent_mark_inspection_scheduled", id);
-      await load();
+      await resolvePageState();
     } finally {
       setActionId(null);
     }
@@ -542,7 +527,7 @@ export default function AgentPortalPage() {
     setActionId(id);
     try {
       await rpcCall("agent_mark_inspection_completed", id);
-      await load();
+      await resolvePageState();
     } finally {
       setActionId(null);
     }
@@ -552,7 +537,7 @@ export default function AgentPortalPage() {
     setActionId(id);
     try {
       await rpcCall("agent_cancel_inspection", id);
-      await load();
+      await resolvePageState();
     } finally {
       setActionId(null);
     }
@@ -596,7 +581,7 @@ export default function AgentPortalPage() {
       setKycMessage(
         "KYC submitted for admin review. Approval only happens after manual trust checks, including document validity review."
       );
-      await load();
+      await resolvePageState();
     } catch (e: any) {
       setKycError(e?.message ?? "Failed to submit KYC.");
     } finally {
@@ -620,8 +605,14 @@ export default function AgentPortalPage() {
     )}.`;
   }, [onboardingFee]);
 
-  if (!authChecked) {
-    return null;
+  if (!authResolved) {
+    return (
+      <main className="min-h-[calc(100vh-140px)]">
+        <div className="rounded-[28px] border border-black/10 bg-white/70 p-8 text-sm text-black/60 shadow-[0_16px_46px_rgba(11,31,42,0.08)] backdrop-blur-xl">
+          Loading…
+        </div>
+      </main>
+    );
   }
 
   if (!hasSession) {
@@ -731,7 +722,7 @@ export default function AgentPortalPage() {
     );
   }
 
-  if (!authorized) {
+  if (!isAgentRole) {
     return null;
   }
 
@@ -773,7 +764,7 @@ export default function AgentPortalPage() {
 
           <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
             <button
-              onClick={load}
+              onClick={resolvePageState}
               className="rounded-2xl border border-black/10 bg-white/70 px-5 py-3 text-sm font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_12px_30px_rgba(11,31,42,0.10)]"
             >
               Refresh
