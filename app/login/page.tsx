@@ -37,6 +37,24 @@ function getMetadataRole(user: any): RoleType {
   return null;
 }
 
+function getBaseSiteUrl() {
+  const envUrl = String(process.env.NEXT_PUBLIC_SITE_URL || "").trim();
+
+  if (envUrl) {
+    return envUrl.replace(/\/+$/, "");
+  }
+
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname.toLowerCase();
+
+    if (host === "localhost" || host === "127.0.0.1") {
+      return window.location.origin.replace(/\/+$/, "");
+    }
+  }
+
+  return "https://keyvera.org";
+}
+
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -257,10 +275,7 @@ function LoginPageContent() {
       const cleanEmail = email.trim();
       const cleanName = fullName.trim();
       const roleHome = getRoleHome(inferredRole);
-      const emailRedirectTo =
-        typeof window !== "undefined"
-          ? `${window.location.origin}/auth/confirm?next=${encodeURIComponent(roleHome)}`
-          : undefined;
+      const emailRedirectTo = `${getBaseSiteUrl()}/auth/confirm?next=${encodeURIComponent(roleHome)}`;
 
       const { data, error } = await supabase.auth.signUp({
         email: cleanEmail,
