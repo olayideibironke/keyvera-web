@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams, usePathname, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type PropertyRow = {
@@ -21,7 +21,58 @@ type PropertyRow = {
   inspection_fee_ngn: number | null;
   inspection_fee_validated: boolean;
   created_at: string;
+  owner_landlord_id?: string | null;
 };
+
+type RevenueRules = {
+  inspection_budget_fee_ngn: string;
+  inspection_standard_fee_ngn: string;
+  inspection_premium_fee_ngn: string;
+  landlord_listing_activation_fee_ngn: string;
+  landlord_featured_boost_fee_ngn: string;
+  agent_onboarding_fee_ngn: string;
+  allow_launch_free_listing: boolean;
+  launch_free_listing_limit: string;
+  tenant_refund_policy: "review" | "credit_or_reschedule" | "restricted_after_scheduling";
+};
+
+const DEFAULT_RULES: RevenueRules = {
+  inspection_budget_fee_ngn: "5000",
+  inspection_standard_fee_ngn: "10000",
+  inspection_premium_fee_ngn: "15000",
+  landlord_listing_activation_fee_ngn: "5000",
+  landlord_featured_boost_fee_ngn: "10000",
+  agent_onboarding_fee_ngn: "5000",
+  allow_launch_free_listing: true,
+  launch_free_listing_limit: "1",
+  tenant_refund_policy: "restricted_after_scheduling",
+};
+
+function toRules(value: any): RevenueRules {
+  return {
+    inspection_budget_fee_ngn: String(value?.inspection_budget_fee_ngn ?? DEFAULT_RULES.inspection_budget_fee_ngn),
+    inspection_standard_fee_ngn: String(value?.inspection_standard_fee_ngn ?? DEFAULT_RULES.inspection_standard_fee_ngn),
+    inspection_premium_fee_ngn: String(value?.inspection_premium_fee_ngn ?? DEFAULT_RULES.inspection_premium_fee_ngn),
+    landlord_listing_activation_fee_ngn: String(
+      value?.landlord_listing_activation_fee_ngn ?? DEFAULT_RULES.landlord_listing_activation_fee_ngn
+    ),
+    landlord_featured_boost_fee_ngn: String(
+      value?.landlord_featured_boost_fee_ngn ?? DEFAULT_RULES.landlord_featured_boost_fee_ngn
+    ),
+    agent_onboarding_fee_ngn: String(value?.agent_onboarding_fee_ngn ?? DEFAULT_RULES.agent_onboarding_fee_ngn),
+    allow_launch_free_listing:
+      typeof value?.allow_launch_free_listing === "boolean"
+        ? value.allow_launch_free_listing
+        : DEFAULT_RULES.allow_launch_free_listing,
+    launch_free_listing_limit: String(value?.launch_free_listing_limit ?? DEFAULT_RULES.launch_free_listing_limit),
+    tenant_refund_policy:
+      value?.tenant_refund_policy === "review" ||
+      value?.tenant_refund_policy === "credit_or_reschedule" ||
+      value?.tenant_refund_policy === "restricted_after_scheduling"
+        ? value.tenant_refund_policy
+        : DEFAULT_RULES.tenant_refund_policy,
+  };
+}
 
 function formatNgn(n?: number | null) {
   if (!n) return "—";
@@ -49,6 +100,27 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(status)}`}>
       {status}
+    </span>
+  );
+}
+
+function InfoBadge({
+  children,
+  tone = "neutral",
+}: {
+  children: React.ReactNode;
+  tone?: "neutral" | "good" | "warn";
+}) {
+  const cls =
+    tone === "good"
+      ? "border-[rgba(14,165,163,0.18)] bg-[rgba(14,165,163,0.10)] text-[#0a4f63]"
+      : tone === "warn"
+      ? "border-amber-200 bg-amber-50 text-amber-900"
+      : "border-black/10 bg-white/70 text-black/55";
+
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${cls}`}>
+      {children}
     </span>
   );
 }
@@ -81,11 +153,39 @@ export default function LandlordPropertyViewPage() {
   const router = useRouter();
   const pathname = usePathname();
   const params = useParams();
+  const searchParams = useSearchParams();
   const propertyId = params?.id as string;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [row, setRow] = useState<PropertyRow | null>(null);
+  const [rules, setRules] = useState<RevenueRules>(DEFAULT_RULES);
+  const [rulesLoaded, setRulesLoaded] = useState(false);
+  const [liveCount, setLiveCount] = useState(0);
+  const [landlordId, setLandlordId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  async function loadRevenueRules() {
+    try {
+      const { data, error } = await supabase
+        .from("platform_settings")
+        .select("setting_value")
+        .eq("setting_key", "revenue_rules")
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data?.setting_value) {
+        setRules(toRules(data.setting_value));
+      } else {
+        setRules(DEFAULT_RULES);
+      }
+    } catch {
+      setRules(DEFAULT_RULES);
+    } finally {
+      setRulesLoaded(true);
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -111,17 +211,32 @@ export default function LandlordPropertyViewPage() {
       return;
     }
 
-    const { data, error } = await supabase
-      .from("properties")
-      .select(
-        "id,title,description,address_line,area,city,state,country,rent_amount_ngn,rent_frequency,property_type,property_class,status,inspection_fee_ngn,inspection_fee_validated,created_at"
-      )
-      .eq("id", propertyId)
-      .eq("owner_landlord_id", landlordRow.id)
-      .maybeSingle();
+    setLandlordId(landlordRow.id);
+
+    const [{ data, error }, { count, error: countErr }] = await Promise.all([
+      supabase
+        .from("properties")
+        .select(
+          "id,title,description,address_line,area,city,state,country,rent_amount_ngn,rent_frequency,property_type,property_class,status,inspection_fee_ngn,inspection_fee_validated,created_at,owner_landlord_id"
+        )
+        .eq("id", propertyId)
+        .eq("owner_landlord_id", landlordRow.id)
+        .maybeSingle(),
+      supabase
+        .from("properties")
+        .select("id", { count: "exact", head: true })
+        .eq("owner_landlord_id", landlordRow.id)
+        .eq("status", "live"),
+    ]);
 
     if (error) {
       setError(error.message);
+      setLoading(false);
+      return;
+    }
+
+    if (countErr) {
+      setError(countErr.message);
       setLoading(false);
       return;
     }
@@ -133,19 +248,119 @@ export default function LandlordPropertyViewPage() {
     }
 
     setRow(data as PropertyRow);
+    setLiveCount(Number(count ?? 0));
     setLoading(false);
   }
 
   useEffect(() => {
     if (!propertyId) return;
+
+    loadRevenueRules();
     load();
+
+    const activationState = searchParams.get("activation");
+    if (activationState === "started") {
+      setNotice("Listing activation has been opened. Payment wiring is the next checkout step.");
+    } else {
+      setNotice(null);
+    }
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [propertyId]);
+  }, [propertyId, searchParams]);
 
   const locationLabel = useMemo(() => {
     if (!row) return "—";
     return [row.area, row.city, row.state, row.country].filter(Boolean).join(", ") || "—";
   }, [row]);
+
+  const listingActivationFee = useMemo(
+    () => Number(rules.landlord_listing_activation_fee_ngn || 0),
+    [rules.landlord_listing_activation_fee_ngn]
+  );
+
+  const freeListingEnabled = !!rules.allow_launch_free_listing;
+
+  const freeListingLimit = useMemo(
+    () => Math.max(0, Number(rules.launch_free_listing_limit || 0)),
+    [rules.launch_free_listing_limit]
+  );
+
+  const freeListingsRemaining = useMemo(() => {
+    if (!freeListingEnabled) return 0;
+    return Math.max(0, freeListingLimit - liveCount);
+  }, [freeListingEnabled, freeListingLimit, liveCount]);
+
+  const activationState = useMemo(() => {
+    const status = String(row?.status || "").toLowerCase();
+
+    if (status === "live") {
+      return {
+        heading: "Live in marketplace",
+        body: "This property is already active in the Keyvera marketplace.",
+        tone: "good" as const,
+        cta: null as null | "activate",
+      };
+    }
+
+    if (status === "pending_review") {
+      return {
+        heading: "Awaiting admin review",
+        body: "Your property has been submitted and is waiting for admin review before activation can happen.",
+        tone: "warn" as const,
+        cta: null as null | "activate",
+      };
+    }
+
+    if (status === "draft") {
+      return {
+        heading: "Draft only",
+        body: "Complete the draft and submit it for review before activation can happen.",
+        tone: "neutral" as const,
+        cta: null as null | "activate",
+      };
+    }
+
+    if (status === "suspended") {
+      return {
+        heading: "Suspended",
+        body: "This property is suspended and cannot move forward until admin action changes the status.",
+        tone: "warn" as const,
+        cta: null as null | "activate",
+      };
+    }
+
+    if (status === "approved") {
+      if (freeListingEnabled && freeListingsRemaining > 0) {
+        return {
+          heading: "Eligible for free launch activation",
+          body: `You still have ${freeListingsRemaining} free live listing slot(s) remaining under the current launch rules.`,
+          tone: "good" as const,
+          cta: "activate" as const,
+        };
+      }
+
+      return {
+        heading: "Listing activation payment required",
+        body: `This property is approved, but your free live listing allocation is exhausted. Activation fee required: ${formatNgn(
+          listingActivationFee
+        )}.`,
+        tone: "warn" as const,
+        cta: "activate" as const,
+      };
+    }
+
+    return {
+      heading: "Activation status unavailable",
+      body: "This property does not yet have an activation state we can process.",
+      tone: "neutral" as const,
+      cta: null as null | "activate",
+    };
+  }, [row, freeListingEnabled, freeListingsRemaining, listingActivationFee]);
+
+  function openActivationFlow() {
+    if (!row) return;
+    router.push(`/landlord/properties/${row.id}?activation=started`);
+  }
 
   return (
     <main className="min-h-[calc(100vh-140px)]">
@@ -176,8 +391,23 @@ export default function LandlordPropertyViewPage() {
               Edit Draft
             </button>
           ) : null}
+
+          {row?.status === "approved" ? (
+            <button
+              onClick={openActivationFlow}
+              className="rounded-2xl bg-[#0b1f2a] px-6 py-3 text-sm font-semibold text-white shadow-[0_16px_38px_rgba(11,31,42,0.22)] transition hover:opacity-90"
+            >
+              Activate Listing
+            </button>
+          ) : null}
         </div>
       </div>
+
+      {notice ? (
+        <div className="mb-6 rounded-[28px] border border-[rgba(14,165,163,0.22)] bg-[rgba(14,165,163,0.08)] p-5 text-sm text-[#0a4f63]">
+          {notice}
+        </div>
+      ) : null}
 
       {error ? (
         <div className="mb-6 rounded-[28px] border border-red-200 bg-red-50 p-5 text-sm text-red-700">{error}</div>
@@ -200,6 +430,9 @@ export default function LandlordPropertyViewPage() {
                   <span className="inline-flex items-center rounded-full border border-black/10 bg-white/75 px-3 py-1 text-xs font-semibold text-black/55">
                     {row.property_type ?? "property"}
                   </span>
+                  <InfoBadge tone={activationState.tone === "good" ? "good" : activationState.tone === "warn" ? "warn" : "neutral"}>
+                    {activationState.heading}
+                  </InfoBadge>
                 </div>
 
                 <h2 className="mt-4 text-2xl font-semibold tracking-tight text-[#0b1f2a] md:text-3xl">{row.title}</h2>
@@ -220,6 +453,30 @@ export default function LandlordPropertyViewPage() {
               </div>
             </div>
           </section>
+
+          <div className="mt-6 rounded-[28px] border border-black/10 bg-white/70 p-6 shadow-[0_16px_46px_rgba(11,31,42,0.10)] backdrop-blur-xl">
+            <div className="flex flex-wrap items-center gap-2">
+              <InfoBadge tone="good">Activation fee: {formatNgn(listingActivationFee)}</InfoBadge>
+              <InfoBadge tone={freeListingsRemaining > 0 ? "good" : "warn"}>
+                Free live slots left: {freeListingsRemaining}
+              </InfoBadge>
+              <InfoBadge>Rules: {rulesLoaded ? "Live" : "Loading"}</InfoBadge>
+            </div>
+
+            <h3 className="mt-4 text-lg font-semibold text-[#0b1f2a]">Activation readiness</h3>
+            <p className="mt-2 text-sm leading-relaxed text-black/60">{activationState.body}</p>
+
+            {row.status === "approved" ? (
+              <div className="mt-5 flex flex-wrap gap-3">
+                <button
+                  onClick={openActivationFlow}
+                  className="rounded-2xl bg-[#0b1f2a] px-5 py-3 text-sm font-semibold text-white shadow-[0_14px_34px_rgba(11,31,42,0.22)] transition hover:opacity-90"
+                >
+                  {freeListingEnabled && freeListingsRemaining > 0 ? "Use Free Launch Slot" : "Pay Activation Fee"}
+                </button>
+              </div>
+            ) : null}
+          </div>
 
           <div className="mt-6 grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
             <section className="rounded-[28px] border border-black/10 bg-white/70 p-6 shadow-[0_16px_46px_rgba(11,31,42,0.10)] backdrop-blur-xl">
