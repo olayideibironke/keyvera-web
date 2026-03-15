@@ -45,10 +45,9 @@ function getBaseSiteUrl() {
   }
 
   if (typeof window !== "undefined") {
-    const host = window.location.hostname.toLowerCase();
-
-    if (host === "localhost" || host === "127.0.0.1") {
-      return window.location.origin.replace(/\/+$/, "");
+    const origin = String(window.location.origin || "").trim();
+    if (origin) {
+      return origin.replace(/\/+$/, "");
     }
   }
 
@@ -79,7 +78,11 @@ function LoginPageContent() {
   }, [modeParam]);
 
   async function getProfileRole(userId: string): Promise<RoleType> {
-    const { data, error } = await supabase.from("profiles").select("role").eq("user_id", userId).maybeSingle();
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("user_id", userId)
+      .maybeSingle();
 
     if (error) throw new Error(error.message);
     return (data?.role as RoleType) ?? null;
@@ -92,8 +95,6 @@ function LoginPageContent() {
     forceRole?: boolean;
   }) {
     const { userId, role, fullNameValue, forceRole = false } = params;
-
-    if (!role || role === "admin") return;
 
     const cleanName = fullNameValue.trim();
 
@@ -116,7 +117,7 @@ function LoginPageContent() {
     } else {
       const updatePayload: { role?: RoleType; full_name?: string | null } = {};
 
-      if (forceRole || existingProfile.role !== role) {
+      if (role && (forceRole || existingProfile.role !== role)) {
         updatePayload.role = role;
       }
 
@@ -125,7 +126,11 @@ function LoginPageContent() {
       }
 
       if (Object.keys(updatePayload).length > 0) {
-        const { error: updateErr } = await supabase.from("profiles").update(updatePayload).eq("user_id", userId);
+        const { error: updateErr } = await supabase
+          .from("profiles")
+          .update(updatePayload)
+          .eq("user_id", userId);
+
         if (updateErr) throw new Error(updateErr.message);
       }
     }
@@ -143,6 +148,7 @@ function LoginPageContent() {
         const { error: insertErr } = await supabase.from("landlords").insert({
           user_id: userId,
         });
+
         if (insertErr) throw new Error(insertErr.message);
       }
     }
@@ -160,6 +166,7 @@ function LoginPageContent() {
         const { error: insertErr } = await supabase.from("agents").insert({
           user_id: userId,
         });
+
         if (insertErr) throw new Error(insertErr.message);
       }
     }
@@ -172,14 +179,14 @@ function LoginPageContent() {
   }): Promise<RoleType> {
     const { user, fullNameValue, fallbackRole } = params;
     const userId = user?.id as string | undefined;
+
     if (!userId) return fallbackRole;
 
     const metadataRole = getMetadataRole(user);
     const profileRoleBefore = await getProfileRole(userId);
+    const resolvedRole = fallbackRole || metadataRole || profileRoleBefore || null;
 
-    const resolvedRole = fallbackRole || metadataRole || profileRoleBefore;
-
-    if (resolvedRole && resolvedRole !== "admin") {
+    if (resolvedRole) {
       await ensureRoleRecords({
         userId,
         role: resolvedRole,
@@ -193,6 +200,11 @@ function LoginPageContent() {
   }
 
   function goAfterAuth(role: RoleType, fallbackNext: string) {
+    if (role === "admin") {
+      router.push("/admin");
+      return;
+    }
+
     if (role === "landlord") {
       router.push("/landlord");
       return;
@@ -205,11 +217,6 @@ function LoginPageContent() {
 
     if (role === "tenant") {
       router.push("/tenant");
-      return;
-    }
-
-    if (role === "admin") {
-      router.push("/admin");
       return;
     }
 
@@ -267,8 +274,8 @@ function LoginPageContent() {
     setSuccessMsg("");
 
     try {
-      if (!inferredRole || inferredRole === "admin") {
-        setErrorMsg("Please start signup from the correct landlord, agent, or tenant page.");
+      if (!inferredRole) {
+        setErrorMsg("Please start signup from the correct landlord, agent, tenant, or admin page.");
         return;
       }
 
@@ -324,6 +331,8 @@ function LoginPageContent() {
         ? "Agent Sign Up"
         : inferredRole === "tenant"
         ? "Tenant Sign Up"
+        : inferredRole === "admin"
+        ? "Admin Sign Up"
         : "Create Account"
       : "Keyvera Login";
 
@@ -335,6 +344,8 @@ function LoginPageContent() {
         ? "Create your agent account to access verification and inspection workflow."
         : inferredRole === "tenant"
         ? "Create your tenant account to browse listings and request inspections."
+        : inferredRole === "admin"
+        ? "Create your admin account to access the control workspace."
         : "Create your Keyvera account."
       : "Sign in to continue.";
 
@@ -385,7 +396,13 @@ function LoginPageContent() {
               disabled={loading}
               className="w-full rounded-lg bg-black p-3 text-white hover:opacity-90 disabled:opacity-60"
             >
-              {loading ? (mode === "signup" ? "Creating account..." : "Logging in...") : mode === "signup" ? "Create Account" : "Login"}
+              {loading
+                ? mode === "signup"
+                  ? "Creating account..."
+                  : "Logging in..."
+                : mode === "signup"
+                ? "Create Account"
+                : "Login"}
             </button>
           </form>
 
