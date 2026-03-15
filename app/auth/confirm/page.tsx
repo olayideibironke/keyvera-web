@@ -142,13 +142,15 @@ async function reconcileAndResolveRole(params: {
 
   const metadataRole = getMetadataRole(user);
   const profileRoleBefore = await getProfileRole(userId);
-  const resolvedRole = profileRoleBefore || metadataRole || fallbackRole || null;
+
+  const hintedRole = metadataRole || fallbackRole || null;
+  const resolvedRole = hintedRole || profileRoleBefore || null;
 
   if (resolvedRole) {
     await ensureRoleRecords({
       userId,
       role: resolvedRole,
-      forceRole: profileRoleBefore !== resolvedRole,
+      forceRole: !!hintedRole && profileRoleBefore !== resolvedRole,
     });
   }
 
