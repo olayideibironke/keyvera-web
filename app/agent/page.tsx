@@ -325,7 +325,7 @@ export default function AgentPortalPage() {
       if (error) throw error;
 
       if (data?.setting_value) {
-        setRules(toRules(data.setting_value);
+        setRules(toRules(data.setting_value));
       } else {
         setRules(DEFAULT_RULES);
       }
@@ -755,7 +755,13 @@ export default function AgentPortalPage() {
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <InfoBadge tone={isKycVerified ? "good" : "warn"}>
-                {isKycVerified ? "KYC verified" : isKycPending ? "KYC under review" : isKycRejected ? "KYC rejected" : "KYC verification required"}
+                {isKycVerified
+                  ? "KYC verified"
+                  : isKycPending
+                  ? "KYC under review"
+                  : isKycRejected
+                  ? "KYC rejected"
+                  : "KYC verification required"}
               </InfoBadge>
               <InfoBadge>{authorizedPropertyIds.length} authorized properties</InfoBadge>
               <InfoBadge>{rows.length} active inspections</InfoBadge>
