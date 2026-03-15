@@ -61,6 +61,10 @@ function BadgeIcon({ size = 44 }: { size?: number }) {
   );
 }
 
+function TableHead({ children }: { children: React.ReactNode }) {
+  return <thead className="bg-gradient-to-b from-black/5 to-black/0">{children}</thead>;
+}
+
 function StatusPill({ status }: { status: InspectionStatus }) {
   const cls =
     status === "requested"
@@ -621,7 +625,7 @@ export default function AgentInspectionsPage() {
                                 </button>
                               ) : null}
 
-                              {(r.status === "requested" || r.status === "paid" || r.status === "scheduled") && (
+                              {(r.status === "requested" || r.status === "paid" || r.status === "scheduled") ? (
                                 <button
                                   className={`rounded-2xl border px-4 py-2.5 text-xs font-semibold transition ${
                                     busy
@@ -633,7 +637,7 @@ export default function AgentInspectionsPage() {
                                 >
                                   Cancel
                                 </button>
-                              )}
+                              ) : null}
                             </div>
                           </td>
                         </tr>
@@ -726,7 +730,7 @@ export default function AgentInspectionsPage() {
                         </button>
                       ) : null}
 
-                      {(r.status === "requested" || r.status === "paid" || r.status === "scheduled") && (
+                      {(r.status === "requested" || r.status === "paid" || r.status === "scheduled") ? (
                         <button
                           className={`rounded-2xl border px-4 py-3 text-xs font-semibold transition ${
                             busy
@@ -738,7 +742,7 @@ export default function AgentInspectionsPage() {
                         >
                           Cancel
                         </button>
-                      )}
+                      ) : null}
                     </div>
                   </article>
                 );
