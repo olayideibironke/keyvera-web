@@ -31,6 +31,7 @@ type AgentRecord = {
   id: string;
   user_id: string;
   kyc_status: string | null;
+  license_number: string | null;
 };
 
 type RevenueRules = {
@@ -265,6 +266,28 @@ function StatCard({
   );
 }
 
+function KycChecklistItem({
+  checked,
+  onChange,
+  children,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/80 p-3 text-sm text-black/70">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5"
+      />
+      <span>{children}</span>
+    </label>
+  );
+}
+
 export default function AgentPortalPage() {
   const router = useRouter();
 
@@ -281,6 +304,15 @@ export default function AgentPortalPage() {
 
   const [rules, setRules] = useState<RevenueRules>(DEFAULT_RULES);
   const [rulesLoaded, setRulesLoaded] = useState(false);
+
+  const [kycIdType, setKycIdType] = useState("drivers_license");
+  const [kycIdNumber, setKycIdNumber] = useState("");
+  const [kycConfirmGovId, setKycConfirmGovId] = useState(false);
+  const [kycConfirmNotExpired, setKycConfirmNotExpired] = useState(false);
+  const [kycConfirmTrueInfo, setKycConfirmTrueInfo] = useState(false);
+  const [kycSubmitting, setKycSubmitting] = useState(false);
+  const [kycMessage, setKycMessage] = useState<string | null>(null);
+  const [kycError, setKycError] = useState<string | null>(null);
 
   async function loadRevenueRules() {
     try {
@@ -368,14 +400,16 @@ export default function AgentPortalPage() {
   async function loadAgentRecord(agentUserId: string) {
     const { data, error } = await supabase
       .from("agents")
-      .select("id,user_id,kyc_status")
+      .select("id,user_id,kyc_status,license_number")
       .eq("user_id", agentUserId)
       .maybeSingle();
 
     if (error) throw error;
 
-    setAgentRecord((data ?? null) as AgentRecord | null);
-    return (data ?? null) as AgentRecord | null;
+    const record = (data ?? null) as AgentRecord | null;
+    setAgentRecord(record);
+    setKycIdNumber(record?.license_number ?? "");
+    return record;
   }
 
   async function loadAuthorizedPropertyIds(agentId: string) {
@@ -524,7 +558,55 @@ export default function AgentPortalPage() {
     }
   }
 
+  async function submitKyc() {
+    setKycMessage(null);
+    setKycError(null);
+
+    const cleanNumber = kycIdNumber.trim();
+    if (!cleanNumber) {
+      setKycError("Government ID number is required.");
+      return;
+    }
+
+    if (!kycConfirmGovId || !kycConfirmNotExpired || !kycConfirmTrueInfo) {
+      setKycError("You must confirm all KYC declarations before submission.");
+      return;
+    }
+
+    if (!agentRecord?.id) {
+      setKycError("Agent profile not found.");
+      return;
+    }
+
+    setKycSubmitting(true);
+
+    try {
+      const normalizedNumber = `${kycIdType}:${cleanNumber}`;
+
+      const { error } = await supabase
+        .from("agents")
+        .update({
+          license_number: normalizedNumber,
+          kyc_status: "pending",
+        })
+        .eq("id", agentRecord.id);
+
+      if (error) throw error;
+
+      setKycMessage(
+        "KYC submitted for admin review. Approval only happens after manual trust checks, including document validity review."
+      );
+      await load();
+    } catch (e: any) {
+      setKycError(e?.message ?? "Failed to submit KYC.");
+    } finally {
+      setKycSubmitting(false);
+    }
+  }
+
   const isKycVerified = agentRecord?.kyc_status === "verified";
+  const isKycPending = agentRecord?.kyc_status === "pending";
+  const isKycRejected = agentRecord?.kyc_status === "rejected";
 
   const paidCount = useMemo(() => rows.filter((r) => r.status === "paid").length, [rows]);
   const scheduledCount = useMemo(() => rows.filter((r) => r.status === "scheduled").length, [rows]);
@@ -682,7 +764,7 @@ export default function AgentPortalPage() {
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <InfoBadge tone={isKycVerified ? "good" : "warn"}>
-                {isKycVerified ? "KYC verified" : "KYC verification required"}
+                {isKycVerified ? "KYC verified" : isKycPending ? "KYC under review" : isKycRejected ? "KYC rejected" : "KYC verification required"}
               </InfoBadge>
               <InfoBadge>{authorizedPropertyIds.length} authorized properties</InfoBadge>
               <InfoBadge>{rows.length} active inspections</InfoBadge>
@@ -707,10 +789,120 @@ export default function AgentPortalPage() {
       </div>
 
       {!isKycVerified ? (
-        <div className="mb-6 rounded-[28px] border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-          Your agent account is not yet verified. You can still view assignments, but scheduling and completion actions
-          stay locked until KYC is verified.
-        </div>
+        <section className="mb-6 rounded-[28px] border border-amber-200 bg-amber-50 shadow-[0_16px_46px_rgba(11,31,42,0.06)]">
+          <div className="border-b border-amber-200 p-5 md:p-6">
+            <div className="text-lg font-semibold text-[#0b1f2a]">Complete your KYC before operating on Keyvera</div>
+            <p className="mt-1 text-sm text-amber-900">
+              Agents are a major trust risk in the rental market. Keyvera uses strict KYC screening to help reduce scams and fraud.
+            </p>
+          </div>
+
+          <div className="p-5 md:p-6">
+            {kycMessage ? (
+              <div className="mb-4 rounded-2xl border border-[rgba(14,165,163,0.25)] bg-[rgba(14,165,163,0.08)] p-4 text-sm text-[#0a4f63]">
+                {kycMessage}
+              </div>
+            ) : null}
+
+            {kycError ? (
+              <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                {kycError}
+              </div>
+            ) : null}
+
+            {isKycRejected ? (
+              <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                Your previous KYC review was rejected. Correct your information and submit again with a valid non-expired government ID.
+              </div>
+            ) : null}
+
+            {isKycPending ? (
+              <div className="mb-4 rounded-2xl border border-[rgba(14,165,163,0.20)] bg-[rgba(14,165,163,0.08)] p-4 text-sm text-[#0a4f63]">
+                Your KYC is currently under admin review. Scheduling and completion actions remain locked until approval.
+              </div>
+            ) : null}
+
+            <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+              <div className="rounded-[24px] border border-black/10 bg-white/80 p-5">
+                <div className="text-sm font-semibold text-[#0b1f2a]">KYC submission</div>
+                <div className="mt-1 text-sm text-black/55">
+                  Current launch requirement: submit your government ID type and ID number for manual admin review.
+                </div>
+
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <label className="block">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-black/45">
+                      Government ID type
+                    </div>
+                    <select
+                      value={kycIdType}
+                      onChange={(e) => setKycIdType(e.target.value)}
+                      disabled={kycSubmitting || isKycPending}
+                      className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-black/20 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <option value="nin">NIN</option>
+                      <option value="drivers_license">Driver&apos;s License</option>
+                      <option value="international_passport">International Passport</option>
+                      <option value="voters_card">Voter&apos;s Card</option>
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-black/45">
+                      Government ID number
+                    </div>
+                    <input
+                      value={kycIdNumber}
+                      onChange={(e) => setKycIdNumber(e.target.value)}
+                      disabled={kycSubmitting || isKycPending}
+                      placeholder="Enter your government ID number"
+                      className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-black/20 disabled:cursor-not-allowed disabled:opacity-60"
+                    />
+                  </label>
+                </div>
+
+                <div className="mt-5 grid gap-3">
+                  <KycChecklistItem checked={kycConfirmGovId} onChange={setKycConfirmGovId}>
+                    I am submitting a real government-issued ID tied to my identity.
+                  </KycChecklistItem>
+
+                  <KycChecklistItem checked={kycConfirmNotExpired} onChange={setKycConfirmNotExpired}>
+                    I confirm this document is valid and not expired.
+                  </KycChecklistItem>
+
+                  <KycChecklistItem checked={kycConfirmTrueInfo} onChange={setKycConfirmTrueInfo}>
+                    I understand false identity information can lead to rejection, disablement, or permanent removal from Keyvera.
+                  </KycChecklistItem>
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <button
+                    onClick={submitKyc}
+                    disabled={kycSubmitting || isKycPending}
+                    className="rounded-2xl bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] px-6 py-3 text-sm font-semibold text-white shadow-[0_16px_38px_rgba(10,79,99,0.28)] transition hover:shadow-[0_20px_46px_rgba(10,79,99,0.34)] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {kycSubmitting ? "Submitting..." : isKycPending ? "Under Review" : "Submit KYC"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-4">
+                <LandingInfoCard
+                  title="Current hard rule"
+                  body="Only non-expired government ID should be submitted. Expired or suspicious KYC should be rejected."
+                />
+                <LandingInfoCard
+                  title="Current launch limitation"
+                  body="This phase captures your ID type and ID number for review. Secure image upload, selfie matching, and expiry-date field enforcement are the next upgrade."
+                />
+                <LandingInfoCard
+                  title="Why this matters"
+                  body="Keyvera is building around trust. Fraud-prone agent activity is one of the biggest market problems, so KYC remains a strict gate."
+                />
+              </div>
+            </div>
+          </div>
+        </section>
       ) : null}
 
       <section className="mb-6 grid gap-4 md:grid-cols-3">
