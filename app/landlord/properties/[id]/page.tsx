@@ -164,6 +164,7 @@ export default function LandlordPropertyViewPage() {
   const [liveCount, setLiveCount] = useState(0);
   const [landlordId, setLandlordId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [activationBusy, setActivationBusy] = useState(false);
 
   async function loadRevenueRules() {
     try {
@@ -259,8 +260,12 @@ export default function LandlordPropertyViewPage() {
     load();
 
     const activationState = searchParams.get("activation");
-    if (activationState === "started") {
-      setNotice("Listing activation has been opened. Payment wiring is the next checkout step.");
+    if (activationState === "paid") {
+      setNotice("Payment successful. Listing activation confirmation is now in progress.");
+    } else if (activationState === "cancelled") {
+      setNotice("Listing activation payment was cancelled before completion.");
+    } else if (activationState === "started") {
+      setNotice("Listing activation has been opened.");
     } else {
       setNotice(null);
     }
@@ -299,6 +304,7 @@ export default function LandlordPropertyViewPage() {
         body: "This property is already active in the Keyvera marketplace.",
         tone: "good" as const,
         cta: null as null | "activate",
+        freeEligible: false,
       };
     }
 
@@ -308,6 +314,7 @@ export default function LandlordPropertyViewPage() {
         body: "Your property has been submitted and is waiting for admin review before activation can happen.",
         tone: "warn" as const,
         cta: null as null | "activate",
+        freeEligible: false,
       };
     }
 
@@ -317,6 +324,7 @@ export default function LandlordPropertyViewPage() {
         body: "Complete the draft and submit it for review before activation can happen.",
         tone: "neutral" as const,
         cta: null as null | "activate",
+        freeEligible: false,
       };
     }
 
@@ -326,6 +334,7 @@ export default function LandlordPropertyViewPage() {
         body: "This property is suspended and cannot move forward until admin action changes the status.",
         tone: "warn" as const,
         cta: null as null | "activate",
+        freeEligible: false,
       };
     }
 
@@ -336,6 +345,7 @@ export default function LandlordPropertyViewPage() {
           body: `You still have ${freeListingsRemaining} free live listing slot(s) remaining under the current launch rules.`,
           tone: "good" as const,
           cta: "activate" as const,
+          freeEligible: true,
         };
       }
 
@@ -346,6 +356,7 @@ export default function LandlordPropertyViewPage() {
         )}.`,
         tone: "warn" as const,
         cta: "activate" as const,
+        freeEligible: false,
       };
     }
 
@@ -354,12 +365,99 @@ export default function LandlordPropertyViewPage() {
       body: "This property does not yet have an activation state we can process.",
       tone: "neutral" as const,
       cta: null as null | "activate",
+      freeEligible: false,
     };
   }, [row, freeListingEnabled, freeListingsRemaining, listingActivationFee]);
 
-  function openActivationFlow() {
+  async function activateViaFreeSlot() {
+    if (!row || !landlordId) return;
+
+    setActivationBusy(true);
+    setError(null);
+
+    try {
+      const { error: updateErr } = await supabase
+        .from("properties")
+        .update({ status: "live" })
+        .eq("id", row.id)
+        .eq("owner_landlord_id", landlordId)
+        .eq("status", "approved");
+
+      if (updateErr) throw updateErr;
+
+      await load();
+      setNotice("Free launch slot used successfully. Your property is now live.");
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to activate free launch slot.");
+    } finally {
+      setActivationBusy(false);
+    }
+  }
+
+  async function activateViaCheckout() {
     if (!row) return;
-    router.push(`/landlord/properties/${row.id}?activation=started`);
+
+    setActivationBusy(true);
+    setError(null);
+
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError || !session?.access_token) {
+        throw new Error("Landlord session not available.");
+      }
+
+      const response = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          checkoutType: "listing_activation",
+          propertyId: row.id,
+        }),
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        if (payload?.freeLaunchEligible) {
+          await activateViaFreeSlot();
+          return;
+        }
+        throw new Error(payload?.error || "Failed to start listing activation checkout.");
+      }
+
+      const checkoutUrl = String(payload?.checkoutUrl || "").trim();
+      if (!checkoutUrl) {
+        throw new Error("Stripe checkout URL was not returned.");
+      }
+
+      window.location.href = checkoutUrl;
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to start listing activation.");
+      setActivationBusy(false);
+    }
+  }
+
+  async function openActivationFlow() {
+    if (!row || activationBusy) return;
+
+    if (String(row.status || "").toLowerCase() !== "approved") {
+      setError("Only approved properties can be activated.");
+      return;
+    }
+
+    if (activationState.freeEligible) {
+      await activateViaFreeSlot();
+      return;
+    }
+
+    await activateViaCheckout();
   }
 
   return (
@@ -395,9 +493,14 @@ export default function LandlordPropertyViewPage() {
           {row?.status === "approved" ? (
             <button
               onClick={openActivationFlow}
-              className="rounded-2xl bg-[#0b1f2a] px-6 py-3 text-sm font-semibold text-white shadow-[0_16px_38px_rgba(11,31,42,0.22)] transition hover:opacity-90"
+              disabled={activationBusy}
+              className="rounded-2xl bg-[#0b1f2a] px-6 py-3 text-sm font-semibold text-white shadow-[0_16px_38px_rgba(11,31,42,0.22)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Activate Listing
+              {activationBusy
+                ? "Working..."
+                : activationState.freeEligible
+                ? "Use Free Launch Slot"
+                : "Pay Activation Fee"}
             </button>
           ) : null}
         </div>
@@ -470,9 +573,14 @@ export default function LandlordPropertyViewPage() {
               <div className="mt-5 flex flex-wrap gap-3">
                 <button
                   onClick={openActivationFlow}
-                  className="rounded-2xl bg-[#0b1f2a] px-5 py-3 text-sm font-semibold text-white shadow-[0_14px_34px_rgba(11,31,42,0.22)] transition hover:opacity-90"
+                  disabled={activationBusy}
+                  className="rounded-2xl bg-[#0b1f2a] px-5 py-3 text-sm font-semibold text-white shadow-[0_14px_34px_rgba(11,31,42,0.22)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {freeListingEnabled && freeListingsRemaining > 0 ? "Use Free Launch Slot" : "Pay Activation Fee"}
+                  {activationBusy
+                    ? "Working..."
+                    : activationState.freeEligible
+                    ? "Use Free Launch Slot"
+                    : "Pay Activation Fee"}
                 </button>
               </div>
             ) : null}
