@@ -316,12 +316,128 @@ function KycChecklistItem({
   );
 }
 
+function PublicAgentLanding({
+  onboardingFee,
+  rulesLoaded,
+  agentRuleMessage,
+}: {
+  onboardingFee: number;
+  rulesLoaded: boolean;
+  agentRuleMessage: string;
+}) {
+  return (
+    <main className="min-h-[calc(100vh-140px)]">
+      <section className="relative overflow-hidden rounded-[34px] border border-black/10 bg-white shadow-[0_16px_46px_rgba(11,31,42,0.10)]">
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(820px 360px at 12% 0%, rgba(14,165,163,0.16), rgba(255,255,255,0) 60%), radial-gradient(700px 320px at 88% 0%, rgba(11,31,42,0.10), rgba(255,255,255,0) 58%)",
+          }}
+        />
+
+        <div className="relative grid gap-8 p-8 md:grid-cols-12 md:p-10">
+          <div className="md:col-span-7">
+            <div className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/80 px-4 py-2 text-xs font-semibold text-[#0b1f2a] shadow-sm">
+              <span className="h-2 w-2 rounded-full bg-[#0ea5a3]" style={{ opacity: 0.75 }} />
+              Welcome to Keyvera for Agents
+            </div>
+
+            <h1 className="mt-5 text-4xl font-extrabold leading-tight tracking-tight text-[#0b1f2a] md:text-5xl">
+              Join Keyvera and manage inspections inside a more trusted rental workflow.
+            </h1>
+
+            <p className="mt-5 max-w-2xl text-base leading-8 text-black/65">
+              Keyvera gives agents a cleaner operational flow for approved assignments, inspection scheduling, and
+              accountable completion inside a structured marketplace.
+            </p>
+
+            <div className="mt-8 flex flex-wrap gap-3">
+              <LandingPrimaryLink href="/login?next=/agent">Sign In</LandingPrimaryLink>
+              <LandingSecondaryLink href="/login?next=/agent&mode=signup">Sign Up</LandingSecondaryLink>
+            </div>
+
+            <div className="mt-8 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-black/10 bg-white/80 p-4 shadow-sm">
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-black/45">Assignments</div>
+                <div className="mt-2 text-lg font-semibold text-[#0b1f2a]">Approved queue only</div>
+                <div className="mt-1 text-xs leading-6 text-black/55">
+                  See only the properties and inspections you are authorized to handle.
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-black/10 bg-white/80 p-4 shadow-sm">
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-black/45">Scheduling</div>
+                <div className="mt-2 text-lg font-semibold text-[#0b1f2a]">Operational clarity</div>
+                <div className="mt-1 text-xs leading-6 text-black/55">
+                  Move inspections from paid to scheduled to completed with cleaner status control.
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-black/10 bg-white/80 p-4 shadow-sm">
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-black/45">Verification</div>
+                <div className="mt-2 text-lg font-semibold text-[#0b1f2a]">KYC-first access</div>
+                <div className="mt-1 text-xs leading-6 text-black/55">
+                  Build trust and unlock deeper workflow access through agent verification.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="md:col-span-5">
+            <div className="rounded-[28px] border border-black/10 bg-white/80 p-6 shadow-sm backdrop-blur">
+              <div className="text-sm font-semibold text-[#0b1f2a]">What agents get</div>
+
+              <div className="mt-5 space-y-4">
+                <LandingInfoCard
+                  title="Professional sign in and onboarding"
+                  body={`Join Keyvera as an agent and enter a structured workflow with onboarding beginning at ${formatNgn(
+                    onboardingFee
+                  )}.`}
+                />
+                <LandingInfoCard
+                  title="Role-based inspection control"
+                  body="Approved assignments, scheduling, and completion live inside a cleaner agent dashboard."
+                />
+                <LandingInfoCard
+                  title="Trust-first direction"
+                  body="We are building the platform to help agents operate inside a safer and more accountable environment."
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-6 rounded-[32px] border border-black/10 bg-white/70 p-6 shadow-[0_18px_54px_rgba(11,31,42,0.10)] backdrop-blur-xl md:p-7">
+        <div className="flex flex-wrap items-center gap-2">
+          <InfoBadge tone="good">Paid trust-first marketplace</InfoBadge>
+          <InfoBadge>Admin-controlled onboarding rules</InfoBadge>
+        </div>
+
+        <h2 className="mt-4 text-2xl font-semibold tracking-tight text-[#0b1f2a]">
+          Join free. Professional participation is not free.
+        </h2>
+
+        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-black/60">{agentRuleMessage}</p>
+
+        <div className="mt-6 grid gap-3 md:grid-cols-3">
+          <StatCard label="Agent onboarding fee" value={formatNgn(onboardingFee)} tone="navy" />
+          <StatCard label="Rules status" value={rulesLoaded ? "Live" : "Loading"} tone="teal" />
+          <StatCard label="Access model" value="Approval first" tone="amber" />
+        </div>
+      </section>
+    </main>
+  );
+}
+
 export default function AgentPortalPage() {
   const router = useRouter();
 
   const [authChecked, setAuthChecked] = useState(false);
   const [hasSession, setHasSession] = useState(false);
   const [authorized, setAuthorized] = useState(false);
+  const [redirectingTo, setRedirectingTo] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<InspectionRow[]>([]);
@@ -375,12 +491,12 @@ export default function AgentPortalPage() {
     if (!session?.user) {
       setHasSession(false);
       setAuthorized(false);
+      setRedirectingTo(null);
       setAuthChecked(true);
       return null;
     }
 
     const user = session.user;
-    setHasSession(true);
 
     const { data: profile, error: profErr } = await supabase
       .from("profiles")
@@ -392,35 +508,44 @@ export default function AgentPortalPage() {
 
     const role = String(profile?.role || "").toLowerCase();
 
-    if (role && role !== "agent") {
-      setAuthorized(false);
-      setAuthChecked(true);
-
-      if (role === "landlord") {
-        router.replace("/landlord");
-        return null;
-      }
-
-      if (role === "tenant") {
-        router.replace("/tenant");
-        return null;
-      }
-
-      if (role === "admin") {
-        router.replace("/admin");
-        return null;
-      }
-
-      return null;
-    }
-
     if (role === "agent") {
+      setHasSession(true);
       setAuthorized(true);
+      setRedirectingTo(null);
       setAuthChecked(true);
       return user;
     }
 
+    if (role === "landlord") {
+      setHasSession(true);
+      setAuthorized(false);
+      setRedirectingTo("/landlord");
+      setAuthChecked(true);
+      router.replace("/landlord");
+      return null;
+    }
+
+    if (role === "tenant") {
+      setHasSession(true);
+      setAuthorized(false);
+      setRedirectingTo("/tenant");
+      setAuthChecked(true);
+      router.replace("/tenant");
+      return null;
+    }
+
+    if (role === "admin") {
+      setHasSession(true);
+      setAuthorized(false);
+      setRedirectingTo("/admin");
+      setAuthChecked(true);
+      router.replace("/admin");
+      return null;
+    }
+
+    setHasSession(false);
     setAuthorized(false);
+    setRedirectingTo(null);
     setAuthChecked(true);
     return null;
   }
@@ -483,6 +608,7 @@ export default function AgentPortalPage() {
 
     try {
       const agentUser = await resolveAgentAccess();
+
       if (!agentUser) {
         setRows([]);
         setPropertyMap({});
@@ -492,6 +618,7 @@ export default function AgentPortalPage() {
       }
 
       const agent = await loadAgentRecord(agentUser.id);
+
       if (!agent) {
         setRows([]);
         setPropertyMap({});
@@ -548,9 +675,11 @@ export default function AgentPortalPage() {
   useEffect(() => {
     loadRevenueRules();
     load();
+
     const { data: sub } = supabase.auth.onAuthStateChange(() => {
       load();
     });
+
     return () => sub?.subscription?.unsubscribe();
   }, []);
 
@@ -692,115 +821,25 @@ export default function AgentPortalPage() {
     return null;
   }
 
-  if (!hasSession) {
+  if (redirectingTo) {
     return (
       <main className="min-h-[calc(100vh-140px)]">
-        <section className="relative overflow-hidden rounded-[34px] border border-black/10 bg-white shadow-[0_16px_46px_rgba(11,31,42,0.10)]">
-          <div
-            className="pointer-events-none absolute inset-0"
-            style={{
-              background:
-                "radial-gradient(820px 360px at 12% 0%, rgba(14,165,163,0.16), rgba(255,255,255,0) 60%), radial-gradient(700px 320px at 88% 0%, rgba(11,31,42,0.10), rgba(255,255,255,0) 58%)",
-            }}
-          />
-
-          <div className="relative grid gap-8 p-8 md:grid-cols-12 md:p-10">
-            <div className="md:col-span-7">
-              <div className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/80 px-4 py-2 text-xs font-semibold text-[#0b1f2a] shadow-sm">
-                <span className="h-2 w-2 rounded-full bg-[#0ea5a3]" style={{ opacity: 0.75 }} />
-                Welcome to Keyvera for Agents
-              </div>
-
-              <h1 className="mt-5 text-4xl font-extrabold leading-tight tracking-tight text-[#0b1f2a] md:text-5xl">
-                Join Keyvera and manage inspections inside a more trusted rental workflow.
-              </h1>
-
-              <p className="mt-5 max-w-2xl text-base leading-8 text-black/65">
-                Keyvera gives agents a cleaner operational flow for approved assignments, inspection scheduling, and
-                accountable completion inside a structured marketplace.
-              </p>
-
-              <div className="mt-8 flex flex-wrap gap-3">
-                <LandingPrimaryLink href="/login?next=/agent">Sign In</LandingPrimaryLink>
-                <LandingSecondaryLink href="/login?next=/agent&mode=signup">Sign Up</LandingSecondaryLink>
-              </div>
-
-              <div className="mt-8 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-black/10 bg-white/80 p-4 shadow-sm">
-                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-black/45">Assignments</div>
-                  <div className="mt-2 text-lg font-semibold text-[#0b1f2a]">Approved queue only</div>
-                  <div className="mt-1 text-xs leading-6 text-black/55">
-                    See only the properties and inspections you are authorized to handle.
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-black/10 bg-white/80 p-4 shadow-sm">
-                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-black/45">Scheduling</div>
-                  <div className="mt-2 text-lg font-semibold text-[#0b1f2a]">Operational clarity</div>
-                  <div className="mt-1 text-xs leading-6 text-black/55">
-                    Move inspections from paid to scheduled to completed with cleaner status control.
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-black/10 bg-white/80 p-4 shadow-sm">
-                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-black/45">Verification</div>
-                  <div className="mt-2 text-lg font-semibold text-[#0b1f2a]">KYC-first access</div>
-                  <div className="mt-1 text-xs leading-6 text-black/55">
-                    Build trust and unlock deeper workflow access through agent verification.
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="md:col-span-5">
-              <div className="rounded-[28px] border border-black/10 bg-white/80 p-6 shadow-sm backdrop-blur">
-                <div className="text-sm font-semibold text-[#0b1f2a]">What agents get</div>
-
-                <div className="mt-5 space-y-4">
-                  <LandingInfoCard
-                    title="Professional sign in and onboarding"
-                    body={`Join Keyvera as an agent and enter a structured workflow with onboarding beginning at ${formatNgn(
-                      onboardingFee
-                    )}.`}
-                  />
-                  <LandingInfoCard
-                    title="Role-based inspection control"
-                    body="Approved assignments, scheduling, and completion live inside a cleaner agent dashboard."
-                  />
-                  <LandingInfoCard
-                    title="Trust-first direction"
-                    body="We are building the platform to help agents operate inside a safer and more accountable environment."
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-6 rounded-[32px] border border-black/10 bg-white/70 p-6 shadow-[0_18px_54px_rgba(11,31,42,0.10)] backdrop-blur-xl md:p-7">
-          <div className="flex flex-wrap items-center gap-2">
-            <InfoBadge tone="good">Paid trust-first marketplace</InfoBadge>
-            <InfoBadge>Admin-controlled onboarding rules</InfoBadge>
-          </div>
-
-          <h2 className="mt-4 text-2xl font-semibold tracking-tight text-[#0b1f2a]">
-            Join free. Professional participation is not free.
-          </h2>
-
-          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-black/60">{agentRuleMessage}</p>
-
-          <div className="mt-6 grid gap-3 md:grid-cols-3">
-            <StatCard label="Agent onboarding fee" value={formatNgn(onboardingFee)} tone="navy" />
-            <StatCard label="Rules status" value={rulesLoaded ? "Live" : "Loading"} tone="teal" />
-            <StatCard label="Access model" value="Approval first" tone="amber" />
-          </div>
+        <section className="rounded-[28px] border border-black/10 bg-white/70 p-8 shadow-[0_16px_46px_rgba(11,31,42,0.10)] backdrop-blur-xl">
+          <div className="text-lg font-semibold text-[#0b1f2a]">Redirecting…</div>
+          <p className="mt-2 text-sm text-black/60">Taking you to the correct dashboard.</p>
         </section>
       </main>
     );
   }
 
-  if (!authorized) {
-    return null;
+  if (!hasSession || !authorized) {
+    return (
+      <PublicAgentLanding
+        onboardingFee={onboardingFee}
+        rulesLoaded={rulesLoaded}
+        agentRuleMessage={agentRuleMessage}
+      />
+    );
   }
 
   return (
