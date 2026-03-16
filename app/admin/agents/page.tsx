@@ -16,6 +16,10 @@ type AgentRow = {
   kyc_id_back_image_path: string | null;
   kyc_id_back_image_uploaded_at: string | null;
   kyc_submitted_at: string | null;
+  kyc_reviewed_by_user_id: string | null;
+  kyc_reviewed_at: string | null;
+  kyc_review_note: string | null;
+  kyc_rejection_category: string | null;
   created_at: string;
 };
 
@@ -43,6 +47,10 @@ type ReviewMode = null | {
   kyc_id_back_image_path: string | null;
   kyc_id_back_image_uploaded_at: string | null;
   kyc_submitted_at: string | null;
+  kyc_reviewed_by_user_id: string | null;
+  kyc_reviewed_at: string | null;
+  kyc_review_note: string | null;
+  kyc_rejection_category: string | null;
 };
 
 type ImagePreviewMode = null | {
@@ -57,6 +65,24 @@ type ImagePreviewMode = null | {
 
 type StatusFilter = "all" | "pending" | "verified" | "rejected";
 type AccountFilter = "all" | "active" | "disabled";
+type RejectionCategory =
+  | "missing_document"
+  | "unreadable_document"
+  | "expired_document"
+  | "identity_mismatch"
+  | "suspicious_document"
+  | "fraud_risk"
+  | "other";
+
+const REJECTION_CATEGORY_OPTIONS: Array<{ value: RejectionCategory; label: string }> = [
+  { value: "missing_document", label: "Missing document" },
+  { value: "unreadable_document", label: "Unreadable document" },
+  { value: "expired_document", label: "Expired document" },
+  { value: "identity_mismatch", label: "Identity mismatch" },
+  { value: "suspicious_document", label: "Suspicious document" },
+  { value: "fraud_risk", label: "Fraud risk" },
+  { value: "other", label: "Other" },
+];
 
 function BadgeIcon({ size = 44 }: { size?: number }) {
   return (
@@ -102,6 +128,18 @@ function kycPill(status: AgentRow["kyc_status"]) {
   return `${base} border-black/10 bg-white/70 text-black/60`;
 }
 
+function rejectionCategoryPill(category: string | null | undefined) {
+  const base = "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold";
+  if (!category) return `${base} border-black/10 bg-white/70 text-black/60`;
+  if (category === "fraud_risk" || category === "suspicious_document") {
+    return `${base} border-red-200 bg-red-50 text-red-700`;
+  }
+  if (category === "expired_document" || category === "identity_mismatch") {
+    return `${base} border-amber-200 bg-amber-50 text-amber-900`;
+  }
+  return `${base} border-black/10 bg-white/70 text-[#0b1f2a]`;
+}
+
 function hasFrontImage(path: string | null | undefined) {
   return !!String(path || "").trim();
 }
@@ -134,6 +172,18 @@ function getQueueSortRank(status: AgentRow["kyc_status"]) {
   if (status === "verified") return 1;
   if (status === "rejected") return 2;
   return 3;
+}
+
+function getRejectionCategoryLabel(value: string | null | undefined) {
+  const match = REJECTION_CATEGORY_OPTIONS.find((item) => item.value === value);
+  return match ? match.label : "Other";
+}
+
+function getDecisionTitle(row: AgentRow) {
+  if (row.kyc_status === "verified") return "Approved";
+  if (row.kyc_status === "rejected") return "Rejected";
+  if (row.kyc_status === "pending") return "Awaiting decision";
+  return "No decision";
 }
 
 async function getActorUserIdOrRedirect(router: ReturnType<typeof useRouter>) {
@@ -262,6 +312,7 @@ export default function AdminAgentsPage() {
 
   const [reason, setReason] = useState("");
   const [auditErr, setAuditErr] = useState<string | null>(null);
+  const [rejectionCategory, setRejectionCategory] = useState<RejectionCategory>("missing_document");
 
   const [checkGovId, setCheckGovId] = useState(false);
   const [checkNotExpired, setCheckNotExpired] = useState(false);
@@ -282,6 +333,12 @@ export default function AdminAgentsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
   const [accountFilter, setAccountFilter] = useState<AccountFilter>("all");
 
+  const getProfileName = (userId: string | null | undefined) => {
+    if (!userId) return "—";
+    const name = profiles[userId]?.full_name?.trim();
+    return name || shortId(userId);
+  };
+
   const load = async () => {
     setLoading(true);
     setErrorMsg("");
@@ -297,7 +354,7 @@ export default function AdminAgentsPage() {
       const { data, error } = await supabase
         .from("agents")
         .select(
-          "id,user_id,kyc_status,license_number,kyc_id_front_image_path,kyc_id_front_image_uploaded_at,kyc_id_back_image_path,kyc_id_back_image_uploaded_at,kyc_submitted_at,created_at"
+          "id,user_id,kyc_status,license_number,kyc_id_front_image_path,kyc_id_front_image_uploaded_at,kyc_id_back_image_path,kyc_id_back_image_uploaded_at,kyc_submitted_at,kyc_reviewed_by_user_id,kyc_reviewed_at,kyc_review_note,kyc_rejection_category,created_at"
         )
         .in("kyc_status", ["pending", "verified", "rejected"])
         .order("created_at", { ascending: true });
@@ -307,13 +364,19 @@ export default function AdminAgentsPage() {
       const list = (data ?? []) as AgentRow[];
       setRows(list);
 
-      const userIds = Array.from(new Set(list.map((r) => String(r.user_id)).filter(Boolean)));
+      const profileIds = Array.from(
+        new Set(
+          list
+            .flatMap((r) => [String(r.user_id || ""), String(r.kyc_reviewed_by_user_id || "")])
+            .filter(Boolean)
+        )
+      );
 
-      if (userIds.length) {
+      if (profileIds.length) {
         const { data: profs, error: pe } = await supabase
           .from("profiles")
           .select("user_id,account_status,full_name")
-          .in("user_id", userIds);
+          .in("user_id", profileIds);
 
         if (pe) throw pe;
 
@@ -457,7 +520,7 @@ export default function AdminAgentsPage() {
     const { data, error } = await supabase
       .from("agents")
       .select(
-        "id,user_id,kyc_status,license_number,kyc_id_front_image_path,kyc_id_front_image_uploaded_at,kyc_id_back_image_path,kyc_id_back_image_uploaded_at,kyc_submitted_at,created_at"
+        "id,user_id,kyc_status,license_number,kyc_id_front_image_path,kyc_id_front_image_uploaded_at,kyc_id_back_image_path,kyc_id_back_image_uploaded_at,kyc_submitted_at,kyc_reviewed_by_user_id,kyc_reviewed_at,kyc_review_note,kyc_rejection_category,created_at"
       )
       .eq("id", agentId)
       .maybeSingle();
@@ -469,6 +532,7 @@ export default function AdminAgentsPage() {
   function resetReviewState() {
     setReason("");
     setAuditErr(null);
+    setRejectionCategory("missing_document");
     setCheckGovId(false);
     setCheckNotExpired(false);
     setCheckIdentityMatch(false);
@@ -486,6 +550,10 @@ export default function AdminAgentsPage() {
     resetReviewState();
     setErrorMsg("");
 
+    if (kind === "reject_kyc" && row.kyc_rejection_category) {
+      setRejectionCategory(row.kyc_rejection_category as RejectionCategory);
+    }
+
     setReview({
       kind,
       agent_id: row.id,
@@ -497,6 +565,10 @@ export default function AdminAgentsPage() {
       kyc_id_back_image_path: row.kyc_id_back_image_path,
       kyc_id_back_image_uploaded_at: row.kyc_id_back_image_uploaded_at,
       kyc_submitted_at: row.kyc_submitted_at,
+      kyc_reviewed_by_user_id: row.kyc_reviewed_by_user_id,
+      kyc_reviewed_at: row.kyc_reviewed_at,
+      kyc_review_note: row.kyc_review_note,
+      kyc_rejection_category: row.kyc_rejection_category,
     });
   };
 
@@ -536,6 +608,8 @@ export default function AdminAgentsPage() {
   const updateKycStatus = async (
     row: AgentRow,
     status: "verified" | "rejected",
+    decisionNote: string,
+    rejectionKind: RejectionCategory | null,
     auditReason: string
   ): Promise<boolean> => {
     setErrorMsg("");
@@ -547,13 +621,22 @@ export default function AdminAgentsPage() {
       if (!actorUserId) return false;
 
       const before = await fetchAgentSnapshot(row.id);
+      const reviewedAt = new Date().toISOString();
+
+      const updatePayload = {
+        kyc_status: status,
+        kyc_reviewed_by_user_id: actorUserId,
+        kyc_reviewed_at: reviewedAt,
+        kyc_review_note: decisionNote,
+        kyc_rejection_category: status === "rejected" ? rejectionKind : null,
+      };
 
       const { data: updatedRow, error } = await supabase
         .from("agents")
-        .update({ kyc_status: status })
+        .update(updatePayload)
         .eq("id", row.id)
         .select(
-          "id,user_id,kyc_status,license_number,kyc_id_front_image_path,kyc_id_front_image_uploaded_at,kyc_id_back_image_path,kyc_id_back_image_uploaded_at,kyc_submitted_at,created_at"
+          "id,user_id,kyc_status,license_number,kyc_id_front_image_path,kyc_id_front_image_uploaded_at,kyc_id_back_image_path,kyc_id_back_image_uploaded_at,kyc_submitted_at,kyc_reviewed_by_user_id,kyc_reviewed_at,kyc_review_note,kyc_rejection_category,created_at"
         )
         .maybeSingle();
 
@@ -639,19 +722,21 @@ export default function AdminAgentsPage() {
         return;
       }
 
-      const composedReason =
+      const decisionNote = cleanReason;
+      const auditReason =
         `Approve agent KYC. ${cleanReason} | ` +
         `Checks confirmed: government ID number reviewed, front ID image reviewed, back ID image reviewed, non-expired document confirmed, identity match reviewed, fraud review completed.`;
 
-      const ok = await updateKycStatus(currentRow, "verified", composedReason);
+      const ok = await updateKycStatus(currentRow, "verified", decisionNote, null, auditReason);
       if (ok) {
         closeReview();
       }
       return;
     }
 
-    const rejectReason = `Reject agent KYC. ${cleanReason}`;
-    const ok = await updateKycStatus(currentRow, "rejected", rejectReason);
+    const decisionNote = cleanReason;
+    const auditReason = `Reject agent KYC (${getRejectionCategoryLabel(rejectionCategory)}). ${cleanReason}`;
+    const ok = await updateKycStatus(currentRow, "rejected", decisionNote, rejectionCategory, auditReason);
     if (ok) {
       closeReview();
     }
@@ -746,15 +831,21 @@ export default function AdminAgentsPage() {
       if (!needle) return true;
 
       const fullName = String(profiles[r.user_id]?.full_name || "").toLowerCase();
+      const reviewerName = String(profiles[r.kyc_reviewed_by_user_id || ""]?.full_name || "").toLowerCase();
       const userId = String(r.user_id || "").toLowerCase();
       const agentId = String(r.id || "").toLowerCase();
       const licenseNumber = String(r.license_number || "").toLowerCase();
+      const reviewNote = String(r.kyc_review_note || "").toLowerCase();
+      const rejectionCategoryLabel = getRejectionCategoryLabel(r.kyc_rejection_category).toLowerCase();
 
       return (
         fullName.includes(needle) ||
+        reviewerName.includes(needle) ||
         userId.includes(needle) ||
         agentId.includes(needle) ||
-        licenseNumber.includes(needle)
+        licenseNumber.includes(needle) ||
+        reviewNote.includes(needle) ||
+        rejectionCategoryLabel.includes(needle)
       );
     });
 
@@ -845,7 +936,7 @@ export default function AdminAgentsPage() {
         />
         <SmallRuleCard
           title="Current schema direction"
-          body="Front and back ID evidence are now the required KYC review standard. Future upgrades should add expiry-date capture, selfie match, and stronger fraud tooling."
+          body="Front and back ID evidence are now the required KYC review standard. This step adds reviewer, timestamp, structured note, and rejection category tracking."
           tone="warn"
         />
         <SmallRuleCard
@@ -887,7 +978,7 @@ export default function AdminAgentsPage() {
               <input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search by agent name, user ID, agent ID, or government ID number…"
+                placeholder="Search by agent, reviewer, ID, note, or rejection category…"
                 className="mt-1 w-full rounded-2xl border border-black/10 bg-white/80 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.40)] focus:ring-4 focus:ring-[rgba(14,165,163,0.12)]"
               />
             </div>
@@ -961,7 +1052,7 @@ export default function AdminAgentsPage() {
           <>
             <div className="hidden xl:block">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1500px] text-left text-sm">
+                <table className="w-full min-w-[1760px] text-left text-sm">
                   <thead className="bg-gradient-to-b from-black/5 to-black/0">
                     <tr>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Agent</th>
@@ -971,6 +1062,7 @@ export default function AdminAgentsPage() {
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Government ID</th>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Front ID</th>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Back ID</th>
+                      <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Decision trail</th>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Submitted</th>
                       <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60 text-right">Actions</th>
                     </tr>
@@ -1047,6 +1139,28 @@ export default function AdminAgentsPage() {
                             ) : (
                               <div className="text-xs font-semibold text-red-700">Missing back</div>
                             )}
+                          </td>
+
+                          <td className="px-5 py-5">
+                            <div className="space-y-2">
+                              <div className="text-xs font-semibold text-[#0b1f2a]">{getDecisionTitle(r)}</div>
+                              <div className="text-xs text-black/50">
+                                Reviewed by: <span className="font-semibold text-[#0b1f2a]">{getProfileName(r.kyc_reviewed_by_user_id)}</span>
+                              </div>
+                              <div className="text-xs text-black/50">
+                                Reviewed at: <span className="font-semibold text-[#0b1f2a]">{fmtDate(r.kyc_reviewed_at)}</span>
+                              </div>
+
+                              {r.kyc_rejection_category ? (
+                                <span className={rejectionCategoryPill(r.kyc_rejection_category)}>
+                                  {getRejectionCategoryLabel(r.kyc_rejection_category)}
+                                </span>
+                              ) : null}
+
+                              <div className="rounded-2xl border border-black/10 bg-white/80 p-3 text-xs leading-relaxed text-black/60">
+                                {r.kyc_review_note?.trim() || "No decision note recorded yet."}
+                              </div>
+                            </div>
                           </td>
 
                           <td className="px-5 py-5 text-black/60">{fmtDate(getSubmittedAt(r))}</td>
@@ -1197,6 +1311,29 @@ export default function AdminAgentsPage() {
                         <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Submitted</div>
                         <div className="mt-1 text-sm text-black/60">{fmtDate(getSubmittedAt(r))}</div>
                       </div>
+
+                      <div className="sm:col-span-2">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Latest decision</div>
+                        <div className="mt-2 rounded-2xl border border-black/10 bg-white/80 p-3">
+                          <div className="text-sm font-semibold text-[#0b1f2a]">{getDecisionTitle(r)}</div>
+                          <div className="mt-2 text-xs text-black/50">
+                            Reviewed by: <span className="font-semibold text-[#0b1f2a]">{getProfileName(r.kyc_reviewed_by_user_id)}</span>
+                          </div>
+                          <div className="mt-1 text-xs text-black/50">
+                            Reviewed at: <span className="font-semibold text-[#0b1f2a]">{fmtDate(r.kyc_reviewed_at)}</span>
+                          </div>
+                          {r.kyc_rejection_category ? (
+                            <div className="mt-2">
+                              <span className={rejectionCategoryPill(r.kyc_rejection_category)}>
+                                {getRejectionCategoryLabel(r.kyc_rejection_category)}
+                              </span>
+                            </div>
+                          ) : null}
+                          <div className="mt-3 text-sm leading-relaxed text-black/60">
+                            {r.kyc_review_note?.trim() || "No decision note recorded yet."}
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -1300,6 +1437,40 @@ export default function AdminAgentsPage() {
                   Close
                 </button>
               </div>
+
+              {(review.kyc_reviewed_at || review.kyc_review_note || review.kyc_rejection_category) ? (
+                <div className="mt-5 rounded-[24px] border border-black/10 bg-white/80 p-4">
+                  <div className="text-sm font-semibold text-[#0b1f2a]">Latest recorded decision</div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-3">
+                    <div>
+                      <div className="text-[11px] font-medium text-black/50">Reviewed by</div>
+                      <div className="mt-1 text-sm text-[#0b1f2a]">{getProfileName(review.kyc_reviewed_by_user_id)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-medium text-black/50">Reviewed at</div>
+                      <div className="mt-1 text-sm text-[#0b1f2a]">{fmtDate(review.kyc_reviewed_at)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-medium text-black/50">Rejection category</div>
+                      <div className="mt-1">
+                        {review.kyc_rejection_category ? (
+                          <span className={rejectionCategoryPill(review.kyc_rejection_category)}>
+                            {getRejectionCategoryLabel(review.kyc_rejection_category)}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-black/60">—</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <div className="text-[11px] font-medium text-black/50">Decision note</div>
+                    <div className="mt-1 rounded-2xl border border-black/10 bg-white/70 p-3 text-sm text-black/60">
+                      {review.kyc_review_note?.trim() || "No decision note recorded yet."}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="mt-5 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
                 <div className="grid gap-4 md:grid-cols-2">
@@ -1439,21 +1610,41 @@ export default function AdminAgentsPage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="rounded-[24px] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                      Rejection should be used when the KYC evidence is missing, suspicious, inconsistent, unreadable, or expired.
+                    <div className="rounded-[24px] border border-amber-200 bg-amber-50 p-4">
+                      <div className="text-sm font-semibold text-amber-900">Structured rejection</div>
+                      <p className="mt-2 text-sm leading-relaxed text-amber-900">
+                        Rejection should be used when the KYC evidence is missing, suspicious, inconsistent, unreadable, or expired.
+                      </p>
+
+                      <div className="mt-4">
+                        <div className="text-[11px] font-medium text-black/50">Rejection category</div>
+                        <select
+                          value={rejectionCategory}
+                          onChange={(e) => setRejectionCategory(e.target.value as RejectionCategory)}
+                          className="mt-1 w-full rounded-2xl border border-black/10 bg-white/80 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-amber-300 focus:ring-4 focus:ring-amber-100"
+                        >
+                          {REJECTION_CATEGORY_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   )}
 
                   <div className="mt-5">
-                    <div className="text-[11px] font-medium text-black/50">Reason (required)</div>
+                    <div className="text-[11px] font-medium text-black/50">
+                      {review.kind === "approve_kyc" ? "Decision note (required)" : "Rejection note (required)"}
+                    </div>
                     <textarea
                       value={reason}
                       onChange={(e) => setReason(e.target.value)}
                       rows={6}
                       placeholder={
                         review.kind === "approve_kyc"
-                          ? "Write the approval reason and review notes..."
-                          : "Write the rejection reason clearly..."
+                          ? "Write the approval note and review findings..."
+                          : "Write the rejection note clearly..."
                       }
                       className="mt-1 w-full resize-none rounded-2xl border border-black/10 bg-white/70 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.40)] focus:ring-4 focus:ring-[rgba(14,165,163,0.12)]"
                     />
