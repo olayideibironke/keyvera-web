@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -88,7 +88,49 @@ async function logAudit(payload: {
   if (error) throw error;
 }
 
-export default function AcceptAdminInvitePage() {
+function AcceptInviteShell({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(14,165,163,0.10),transparent_30%),linear-gradient(180deg,#eef7f7_0%,#f7fbfb_45%,#ffffff_100%)] px-4 py-10">
+      <div className="mx-auto max-w-3xl">
+        <div className="mb-6">
+          <Link
+            href="/login"
+            className="inline-flex items-center rounded-2xl border border-black/10 bg-white/70 px-4 py-2 text-sm font-semibold text-[#0b1f2a] transition hover:bg-white"
+          >
+            ← Back to Login
+          </Link>
+        </div>
+
+        <section className="rounded-[32px] border border-black/10 bg-white/75 shadow-[0_24px_80px_rgba(11,31,42,0.12)] backdrop-blur-xl">
+          <div className="border-b border-black/10 p-6 md:p-8">
+            <h1 className="text-2xl font-semibold tracking-tight text-[#0b1f2a] md:text-3xl">Accept Admin Invitation</h1>
+            <p className="mt-2 text-sm leading-relaxed text-black/60">
+              This admin invitation does not give live access immediately. After acceptance, the account must still wait for explicit owner approval.
+            </p>
+          </div>
+
+          <div className="p-6 md:p-8">{children}</div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function AcceptInviteLoadingFallback() {
+  return (
+    <AcceptInviteShell>
+      <div className="rounded-[24px] border border-black/10 bg-white/70 p-5 text-sm text-black/60">
+        Loading invitation…
+      </div>
+    </AcceptInviteShell>
+  );
+}
+
+function AcceptAdminInviteInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -306,7 +348,7 @@ export default function AcceptAdminInvitePage() {
         await logAudit({
           actor_user_id: user.id,
           action: "accept_admin_invitation",
-          entity_type: "admin_invitation",
+          entity_type: "admin_inviation",
           entity_id: invitation.id,
           reason: `Accepted admin invite for ${actorEmail}. Owner approval still required.`,
           before: {
@@ -334,138 +376,124 @@ export default function AcceptAdminInvitePage() {
   };
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(14,165,163,0.10),transparent_30%),linear-gradient(180deg,#eef7f7_0%,#f7fbfb_45%,#ffffff_100%)] px-4 py-10">
-      <div className="mx-auto max-w-3xl">
-        <div className="mb-6">
-          <Link
-            href="/login"
-            className="inline-flex items-center rounded-2xl border border-black/10 bg-white/70 px-4 py-2 text-sm font-semibold text-[#0b1f2a] transition hover:bg-white"
-          >
-            ← Back to Login
-          </Link>
+    <AcceptInviteShell>
+      {errorMsg ? (
+        <div className="mb-5 rounded-[24px] border border-red-200 bg-red-50 p-4 text-sm text-red-700">{errorMsg}</div>
+      ) : null}
+
+      {successMsg ? (
+        <div className="mb-5 rounded-[24px] border border-[rgba(14,165,163,0.22)] bg-[rgba(14,165,163,0.08)] p-4 text-sm text-[#0a4f63]">
+          {successMsg}
         </div>
+      ) : null}
 
-        <section className="rounded-[32px] border border-black/10 bg-white/75 shadow-[0_24px_80px_rgba(11,31,42,0.12)] backdrop-blur-xl">
-          <div className="border-b border-black/10 p-6 md:p-8">
-            <h1 className="text-2xl font-semibold tracking-tight text-[#0b1f2a] md:text-3xl">Accept Admin Invitation</h1>
-            <p className="mt-2 text-sm leading-relaxed text-black/60">
-              This admin invitation does not give live access immediately. After acceptance, the account must still wait for explicit owner approval.
-            </p>
+      {state === "loading" ? (
+        <div className="rounded-[24px] border border-black/10 bg-white/70 p-5 text-sm text-black/60">Loading invitation…</div>
+      ) : null}
+
+      {invitation ? (
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-[24px] border border-black/10 bg-white/80 p-5">
+            <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-black/40">Invite email</div>
+            <div className="mt-2 text-base font-semibold text-[#0b1f2a]">{invitation.email}</div>
+
+            <div className="mt-5 text-[11px] font-medium uppercase tracking-[0.14em] text-black/40">Admin level</div>
+            <div className="mt-2 text-base font-semibold text-[#0b1f2a]">{getAdminLevelLabel(invitation.invited_admin_level)}</div>
+
+            <div className="mt-5 text-[11px] font-medium uppercase tracking-[0.14em] text-black/40">Invite status</div>
+            <div className="mt-2">
+              <span className={inviteStatusPill(invitation.invite_status)}>{invitation.invite_status}</span>
+            </div>
           </div>
 
-          <div className="p-6 md:p-8">
-            {errorMsg ? (
-              <div className="mb-5 rounded-[24px] border border-red-200 bg-red-50 p-4 text-sm text-red-700">{errorMsg}</div>
-            ) : null}
+          <div className="rounded-[24px] border border-black/10 bg-white/80 p-5">
+            <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-black/40">Created</div>
+            <div className="mt-2 text-sm text-black/60">{fmtDate(invitation.created_at)}</div>
 
-            {successMsg ? (
-              <div className="mb-5 rounded-[24px] border border-[rgba(14,165,163,0.22)] bg-[rgba(14,165,163,0.08)] p-4 text-sm text-[#0a4f63]">
-                {successMsg}
-              </div>
-            ) : null}
+            <div className="mt-5 text-[11px] font-medium uppercase tracking-[0.14em] text-black/40">Expires</div>
+            <div className="mt-2 text-sm text-black/60">{fmtDate(invitation.expires_at)}</div>
 
-            {state === "loading" ? (
-              <div className="rounded-[24px] border border-black/10 bg-white/70 p-5 text-sm text-black/60">Loading invitation…</div>
-            ) : null}
-
-            {invitation ? (
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-[24px] border border-black/10 bg-white/80 p-5">
-                  <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-black/40">Invite email</div>
-                  <div className="mt-2 text-base font-semibold text-[#0b1f2a]">{invitation.email}</div>
-
-                  <div className="mt-5 text-[11px] font-medium uppercase tracking-[0.14em] text-black/40">Admin level</div>
-                  <div className="mt-2 text-base font-semibold text-[#0b1f2a]">{getAdminLevelLabel(invitation.invited_admin_level)}</div>
-
-                  <div className="mt-5 text-[11px] font-medium uppercase tracking-[0.14em] text-black/40">Invite status</div>
-                  <div className="mt-2">
-                    <span className={inviteStatusPill(invitation.invite_status)}>{invitation.invite_status}</span>
-                  </div>
-                </div>
-
-                <div className="rounded-[24px] border border-black/10 bg-white/80 p-5">
-                  <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-black/40">Created</div>
-                  <div className="mt-2 text-sm text-black/60">{fmtDate(invitation.created_at)}</div>
-
-                  <div className="mt-5 text-[11px] font-medium uppercase tracking-[0.14em] text-black/40">Expires</div>
-                  <div className="mt-2 text-sm text-black/60">{fmtDate(invitation.expires_at)}</div>
-
-                  <div className="mt-5 text-[11px] font-medium uppercase tracking-[0.14em] text-black/40">Current signed-in email</div>
-                  <div className="mt-2 text-sm text-black/60">{currentUserEmail || "—"}</div>
-                </div>
-
-                <div className="md:col-span-2 rounded-[24px] border border-black/10 bg-white/80 p-5">
-                  <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-black/40">Owner message</div>
-                  <div className="mt-2 text-sm leading-relaxed text-black/60">
-                    {invitation.note?.trim() || "No owner message was added."}
-                  </div>
-                </div>
-
-                {profile ? (
-                  <div className="md:col-span-2 rounded-[24px] border border-black/10 bg-white/80 p-5">
-                    <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-black/40">Current profile state</div>
-                    <div className="mt-3 grid gap-3 md:grid-cols-3">
-                      <div>
-                        <div className="text-[11px] font-medium text-black/50">Role</div>
-                        <div className="mt-1 text-sm text-[#0b1f2a]">{profile.role || "—"}</div>
-                      </div>
-                      <div>
-                        <div className="text-[11px] font-medium text-black/50">Admin level</div>
-                        <div className="mt-1 text-sm text-[#0b1f2a]">{getAdminLevelLabel(profile.admin_level)}</div>
-                      </div>
-                      <div>
-                        <div className="text-[11px] font-medium text-black/50">Access status</div>
-                        <div className="mt-1 text-sm text-[#0b1f2a]">{profile.admin_access_status || "—"}</div>
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            {state === "ready" ? (
-              <div className="mt-6 rounded-[24px] border border-amber-200 bg-amber-50 p-5">
-                <div className="text-sm font-semibold text-amber-900">Owner approval still required</div>
-                <p className="mt-2 text-sm leading-relaxed text-amber-900">
-                  Accepting this invitation will only place your account into the pending owner approval queue. Live admin access stays blocked until the owner explicitly approves it.
-                </p>
-
-                <div className="mt-5 flex flex-wrap justify-end gap-2">
-                  <button
-                    onClick={acceptInvite}
-                    disabled={busy}
-                    className={`rounded-2xl px-5 py-3 text-sm font-semibold text-white transition ${
-                      busy
-                        ? "cursor-not-allowed bg-[#0a4f63]/60"
-                        : "bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] shadow-[0_16px_38px_rgba(10,79,99,0.28)] hover:shadow-[0_20px_46px_rgba(10,79,99,0.34)]"
-                    }`}
-                  >
-                    {busy ? "Accepting…" : "Accept Invitation"}
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
-            {state === "accepted" ? (
-              <div className="mt-6 rounded-[24px] border border-[rgba(14,165,163,0.22)] bg-[rgba(14,165,163,0.08)] p-5">
-                <div className="text-sm font-semibold text-[#0b1f2a]">Waiting for owner approval</div>
-                <p className="mt-2 text-sm leading-relaxed text-black/60">
-                  Your account is now in the pending owner approval stage. The owner must approve your admin access before any admin pages can be used.
-                </p>
-
-                <div className="mt-5 flex flex-wrap gap-2">
-                  <Link
-                    href="/login"
-                    className="rounded-2xl border border-black/10 bg-white/80 px-4 py-3 text-sm font-semibold text-[#0b1f2a] transition hover:bg-white"
-                  >
-                    Return to Login
-                  </Link>
-                </div>
-              </div>
-            ) : null}
+            <div className="mt-5 text-[11px] font-medium uppercase tracking-[0.14em] text-black/40">Current signed-in email</div>
+            <div className="mt-2 text-sm text-black/60">{currentUserEmail || "—"}</div>
           </div>
-        </section>
-      </div>
-    </main>
+
+          <div className="md:col-span-2 rounded-[24px] border border-black/10 bg-white/80 p-5">
+            <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-black/40">Owner message</div>
+            <div className="mt-2 text-sm leading-relaxed text-black/60">
+              {invitation.note?.trim() || "No owner message was added."}
+            </div>
+          </div>
+
+          {profile ? (
+            <div className="md:col-span-2 rounded-[24px] border border-black/10 bg-white/80 p-5">
+              <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-black/40">Current profile state</div>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                <div>
+                  <div className="text-[11px] font-medium text-black/50">Role</div>
+                  <div className="mt-1 text-sm text-[#0b1f2a]">{profile.role || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] font-medium text-black/50">Admin level</div>
+                  <div className="mt-1 text-sm text-[#0b1f2a]">{getAdminLevelLabel(profile.admin_level)}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] font-medium text-black/50">Access status</div>
+                  <div className="mt-1 text-sm text-[#0b1f2a]">{profile.admin_access_status || "—"}</div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {state === "ready" ? (
+        <div className="mt-6 rounded-[24px] border border-amber-200 bg-amber-50 p-5">
+          <div className="text-sm font-semibold text-amber-900">Owner approval still required</div>
+          <p className="mt-2 text-sm leading-relaxed text-amber-900">
+            Accepting this invitation will only place your account into the pending owner approval queue. Live admin access stays blocked until the owner explicitly approves it.
+          </p>
+
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <button
+              onClick={acceptInvite}
+              disabled={busy}
+              className={`rounded-2xl px-5 py-3 text-sm font-semibold text-white transition ${
+                busy
+                  ? "cursor-not-allowed bg-[#0a4f63]/60"
+                  : "bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] shadow-[0_16px_38px_rgba(10,79,99,0.28)] hover:shadow-[0_20px_46px_rgba(10,79,99,0.34)]"
+              }`}
+            >
+              {busy ? "Accepting…" : "Accept Invitation"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {state === "accepted" ? (
+        <div className="mt-6 rounded-[24px] border border-[rgba(14,165,163,0.22)] bg-[rgba(14,165,163,0.08)] p-5">
+          <div className="text-sm font-semibold text-[#0b1f2a]">Waiting for owner approval</div>
+          <p className="mt-2 text-sm leading-relaxed text-black/60">
+            Your account is now in the pending owner approval stage. The owner must approve your admin access before any admin pages can be used.
+          </p>
+
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Link
+              href="/login"
+              className="rounded-2xl border border-black/10 bg-white/80 px-4 py-3 text-sm font-semibold text-[#0b1f2a] transition hover:bg-white"
+            >
+              Return to Login
+            </Link>
+          </div>
+        </div>
+      ) : null}
+    </AcceptInviteShell>
+  );
+}
+
+export default function AcceptAdminInvitePage() {
+  return (
+    <Suspense fallback={<AcceptInviteLoadingFallback />}>
+      <AcceptAdminInviteInner />
+    </Suspense>
   );
 }
