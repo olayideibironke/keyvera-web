@@ -16,6 +16,8 @@ type AdminProfileRow = {
   admin_invited_by_user_id: string | null;
   admin_approved_by_user_id: string | null;
   admin_approved_at: string | null;
+  admin_disabled_at: string | null;
+  admin_disabled_by_user_id: string | null;
   admin_access_note: string | null;
   admin_invitation_id: string | null;
   created_at: string | null;
@@ -50,6 +52,14 @@ type ApprovalModalState = null | {
   fullName: string;
   adminLevel: string | null;
   invitationId: string | null;
+};
+
+type EnforcementModalState = null | {
+  kind: "disable_admin" | "enable_admin";
+  userId: string;
+  fullName: string;
+  adminLevel: string | null;
+  currentAccessStatus: string | null;
 };
 
 const ADMIN_LEVEL_OPTIONS: Array<{ value: AdminLevel; label: string }> = [
@@ -230,6 +240,9 @@ export default function AdminAdminsPage() {
   const [approvalModal, setApprovalModal] = useState<ApprovalModalState>(null);
   const [approvalNote, setApprovalNote] = useState("");
 
+  const [enforcementModal, setEnforcementModal] = useState<EnforcementModalState>(null);
+  const [enforcementNote, setEnforcementNote] = useState("");
+
   const load = async () => {
     setLoading(true);
     setErrorMsg("");
@@ -247,7 +260,7 @@ export default function AdminAdminsPage() {
       const { data: rows, error: profileErr } = await supabase
         .from("profiles")
         .select(
-          "user_id,full_name,role,account_status,admin_level,admin_access_status,admin_invited_by_user_id,admin_approved_by_user_id,admin_approved_at,admin_access_note,admin_invitation_id,created_at"
+          "user_id,full_name,role,account_status,admin_level,admin_access_status,admin_invited_by_user_id,admin_approved_by_user_id,admin_approved_at,admin_disabled_at,admin_disabled_by_user_id,admin_access_note,admin_invitation_id,created_at"
         )
         .or("role.eq.admin,admin_access_status.eq.pending_owner_approval")
         .order("created_at", { ascending: false });
@@ -276,6 +289,7 @@ export default function AdminAdminsPage() {
               String(row.user_id || ""),
               String(row.admin_invited_by_user_id || ""),
               String(row.admin_approved_by_user_id || ""),
+              String(row.admin_disabled_by_user_id || ""),
             ]),
             ...loadedInvites.flatMap((row) => [
               String(row.invited_by_user_id || ""),
@@ -355,6 +369,16 @@ export default function AdminAdminsPage() {
     [currentAdmins]
   );
 
+  const disabledAdminCount = useMemo(
+    () =>
+      currentAdmins.filter((row) => {
+        const accessStatus = String(row.admin_access_status || "").toLowerCase();
+        const accountStatus = String(row.account_status || "").toLowerCase();
+        return accessStatus === "disabled" || accountStatus === "disabled";
+      }).length,
+    [currentAdmins]
+  );
+
   const openInvitationCount = useMemo(
     () =>
       invitations.filter((row) => {
@@ -382,6 +406,21 @@ export default function AdminAdminsPage() {
     } catch {
       setSuccessMsg("Production invite link generated. Copy it manually from the field.");
     }
+  };
+
+  const canManageLiveAdmin = (row: AdminProfileRow) => {
+    const currentUserId = access?.userId || null;
+    const adminLevel = String(row.admin_level || "").toLowerCase();
+    if (!currentUserId) return false;
+    if (row.user_id === currentUserId) return false;
+    if (adminLevel === "super_admin") return false;
+    return row.role === "admin";
+  };
+
+  const isLiveAdminDisabled = (row: AdminProfileRow) => {
+    const accessStatus = String(row.admin_access_status || "").toLowerCase();
+    const accountStatus = String(row.account_status || "").toLowerCase();
+    return accessStatus === "disabled" || accountStatus === "disabled";
   };
 
   const createInvitation = async () => {
@@ -506,7 +545,7 @@ export default function AdminAdminsPage() {
       const { data: beforeProfile, error: beforeErr } = await supabase
         .from("profiles")
         .select(
-          "user_id,full_name,role,account_status,admin_level,admin_access_status,admin_invited_by_user_id,admin_approved_by_user_id,admin_approved_at,admin_access_note,admin_invitation_id"
+          "user_id,full_name,role,account_status,admin_level,admin_access_status,admin_invited_by_user_id,admin_approved_by_user_id,admin_approved_at,admin_disabled_at,admin_disabled_by_user_id,admin_access_note,admin_invitation_id"
         )
         .eq("user_id", approvalModal.userId)
         .maybeSingle();
@@ -523,6 +562,8 @@ export default function AdminAdminsPage() {
           admin_access_status: "active",
           admin_approved_by_user_id: actorUserId,
           admin_approved_at: approvedAt,
+          admin_disabled_at: null,
+          admin_disabled_by_user_id: null,
           admin_role_changed_by_user_id: actorUserId,
           admin_role_changed_at: approvedAt,
           admin_access_note: cleanNote,
@@ -530,7 +571,7 @@ export default function AdminAdminsPage() {
         })
         .eq("user_id", approvalModal.userId)
         .select(
-          "user_id,full_name,role,account_status,admin_level,admin_access_status,admin_invited_by_user_id,admin_approved_by_user_id,admin_approved_at,admin_access_note,admin_invitation_id"
+          "user_id,full_name,role,account_status,admin_level,admin_access_status,admin_invited_by_user_id,admin_approved_by_user_id,admin_approved_at,admin_disabled_at,admin_disabled_by_user_id,admin_access_note,admin_invitation_id"
         )
         .maybeSingle();
 
@@ -566,6 +607,112 @@ export default function AdminAdminsPage() {
       await load();
     } catch (e: any) {
       setErrorMsg(e?.message ?? "Failed to approve admin access.");
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const openEnforcement = (kind: "disable_admin" | "enable_admin", row: AdminProfileRow) => {
+    setEnforcementNote("");
+    setErrorMsg("");
+    setSuccessMsg("");
+    setEnforcementModal({
+      kind,
+      userId: row.user_id,
+      fullName: row.full_name?.trim() || "Admin",
+      adminLevel: row.admin_level,
+      currentAccessStatus: row.admin_access_status,
+    });
+  };
+
+  const closeEnforcement = () => {
+    if (busyKey) return;
+    setEnforcementModal(null);
+    setEnforcementNote("");
+  };
+
+  const applyEnforcement = async () => {
+    if (!enforcementModal) return;
+
+    const actorUserId = access?.userId || null;
+    const cleanNote = enforcementNote.trim();
+
+    if (!actorUserId) {
+      setErrorMsg("Current admin identity could not be resolved.");
+      return;
+    }
+
+    if (!cleanNote) {
+      setErrorMsg("Reason is required.");
+      return;
+    }
+
+    if (enforcementModal.userId === actorUserId) {
+      setErrorMsg("You cannot disable or re-enable your own super-admin account here.");
+      return;
+    }
+
+    if (String(enforcementModal.adminLevel || "").toLowerCase() === "super_admin") {
+      setErrorMsg("Super-admin accounts cannot be managed from this control.");
+      return;
+    }
+
+    setBusyKey(`${enforcementModal.kind}-${enforcementModal.userId}`);
+    setErrorMsg("");
+    setSuccessMsg("");
+
+    try {
+      const { data: beforeProfile, error: beforeErr } = await supabase
+        .from("profiles")
+        .select(
+          "user_id,full_name,role,account_status,admin_level,admin_access_status,admin_invited_by_user_id,admin_approved_by_user_id,admin_approved_at,admin_disabled_at,admin_disabled_by_user_id,admin_access_note,admin_invitation_id"
+        )
+        .eq("user_id", enforcementModal.userId)
+        .maybeSingle();
+
+      if (beforeErr) throw beforeErr;
+
+      const changedAt = new Date().toISOString();
+      const isDisable = enforcementModal.kind === "disable_admin";
+
+      const { data: afterProfile, error: updateErr } = await supabase
+        .from("profiles")
+        .update({
+          account_status: isDisable ? "disabled" : "active",
+          admin_access_status: isDisable ? "disabled" : "active",
+          admin_disabled_at: isDisable ? changedAt : null,
+          admin_disabled_by_user_id: isDisable ? actorUserId : null,
+          admin_role_changed_by_user_id: actorUserId,
+          admin_role_changed_at: changedAt,
+          admin_access_note: cleanNote,
+        })
+        .eq("user_id", enforcementModal.userId)
+        .select(
+          "user_id,full_name,role,account_status,admin_level,admin_access_status,admin_invited_by_user_id,admin_approved_by_user_id,admin_approved_at,admin_disabled_at,admin_disabled_by_user_id,admin_access_note,admin_invitation_id"
+        )
+        .maybeSingle();
+
+      if (updateErr) throw updateErr;
+
+      try {
+        await logAudit({
+          actor_user_id: actorUserId,
+          action: isDisable ? "disable_sub_admin" : "enable_sub_admin",
+          entity_type: "profile",
+          entity_id: enforcementModal.userId,
+          reason: cleanNote,
+          before: beforeProfile,
+          after: afterProfile,
+        });
+      } catch {
+        // keep UI flow clean
+      }
+
+      setSuccessMsg(isDisable ? "Sub-admin access disabled." : "Sub-admin access re-enabled.");
+      closeEnforcement();
+      await load();
+    } catch (e: any) {
+      setErrorMsg(e?.message ?? "Failed to update sub-admin access.");
     } finally {
       setBusyKey(null);
     }
@@ -636,10 +783,11 @@ export default function AdminAdminsPage() {
         </div>
       ) : null}
 
-      <section className="mb-6 grid gap-3 md:grid-cols-3">
+      <section className="mb-6 grid gap-3 md:grid-cols-4">
         <SummaryCard title="Super Admins" value={superAdminCount} tone="good" />
         <SummaryCard title="Active Admins" value={activeAdminCount} tone="neutral" />
-        <SummaryCard title="Open Invitations" value={openInvitationCount} tone="warn" />
+        <SummaryCard title="Disabled Admins" value={disabledAdminCount} tone="warn" />
+        <SummaryCard title="Open Invitations" value={openInvitationCount} tone="neutral" />
       </section>
 
       <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
@@ -823,7 +971,7 @@ export default function AdminAdminsPage() {
               <SectionBadge>{currentAdmins.length}</SectionBadge>
             </>
           }
-          subtitle="This is your central view of who currently holds live admin access."
+          subtitle="This is your central view of who currently holds live admin access. You can disable or re-enable sub-admins here without touching your own super-admin account."
         >
           {loading ? (
             <div className="p-6 text-sm text-black/60">Loading…</div>
@@ -833,7 +981,7 @@ export default function AdminAdminsPage() {
             <>
               <div className="hidden xl:block">
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[1380px] text-left text-sm">
+                  <table className="w-full min-w-[1540px] text-left text-sm">
                     <thead className="bg-gradient-to-b from-black/5 to-black/0">
                       <tr>
                         <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Admin</th>
@@ -842,77 +990,169 @@ export default function AdminAdminsPage() {
                         <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Approved By</th>
                         <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Approved At</th>
                         <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60">Owner Approval Note</th>
+                        <th className="whitespace-nowrap px-5 py-4 text-xs font-semibold text-black/60 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {currentAdmins.map((row) => (
-                        <tr key={row.user_id} className="border-t border-black/5 align-top">
-                          <td className="px-5 py-5">
-                            <div className="font-semibold text-[#0b1f2a]">{row.full_name?.trim() || "Admin"}</div>
-                            <div className="mt-1 font-mono text-xs text-black/50">{shortId(row.user_id)}</div>
-                          </td>
-                          <td className="px-5 py-5">
-                            <span className={adminLevelPill(row.admin_level)}>{getAdminLevelLabel(row.admin_level)}</span>
-                          </td>
-                          <td className="px-5 py-5">
-                            <span className={accessStatusPill(row.admin_access_status)}>
-                              {String(row.admin_access_status || "—").replaceAll("_", " ")}
-                            </span>
-                          </td>
-                          <td className="px-5 py-5 text-black/60">{getProfileName(row.admin_approved_by_user_id)}</td>
-                          <td className="px-5 py-5 text-black/60">{fmtDate(row.admin_approved_at)}</td>
-                          <td className="px-5 py-5">
-                            <div className="max-w-[420px] rounded-2xl border border-black/10 bg-white/80 p-3 text-xs leading-relaxed text-black/60">
-                              {row.admin_access_note?.trim() || "No owner approval note recorded yet."}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                      {currentAdmins.map((row) => {
+                        const manageable = canManageLiveAdmin(row);
+                        const isDisabled = isLiveAdminDisabled(row);
+                        const actionBusy = busyKey === `disable_admin-${row.user_id}` || busyKey === `enable_admin-${row.user_id}`;
+
+                        return (
+                          <tr key={row.user_id} className="border-t border-black/5 align-top">
+                            <td className="px-5 py-5">
+                              <div className="font-semibold text-[#0b1f2a]">{row.full_name?.trim() || "Admin"}</div>
+                              <div className="mt-1 font-mono text-xs text-black/50">{shortId(row.user_id)}</div>
+                            </td>
+                            <td className="px-5 py-5">
+                              <span className={adminLevelPill(row.admin_level)}>{getAdminLevelLabel(row.admin_level)}</span>
+                            </td>
+                            <td className="px-5 py-5">
+                              <div className="flex flex-col gap-2">
+                                <span className={accessStatusPill(row.admin_access_status)}>
+                                  {String(row.admin_access_status || "—").replaceAll("_", " ")}
+                                </span>
+                                {row.admin_disabled_at ? (
+                                  <div className="text-xs text-black/50">
+                                    Disabled at: <span className="font-semibold text-[#0b1f2a]">{fmtDate(row.admin_disabled_at)}</span>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </td>
+                            <td className="px-5 py-5 text-black/60">{getProfileName(row.admin_approved_by_user_id)}</td>
+                            <td className="px-5 py-5 text-black/60">{fmtDate(row.admin_approved_at)}</td>
+                            <td className="px-5 py-5">
+                              <div className="max-w-[420px] rounded-2xl border border-black/10 bg-white/80 p-3 text-xs leading-relaxed text-black/60">
+                                {row.admin_access_note?.trim() || "No owner approval note recorded yet."}
+                              </div>
+                            </td>
+                            <td className="px-5 py-5">
+                              <div className="flex flex-wrap justify-end gap-2">
+                                {!manageable ? (
+                                  <span className="rounded-full border border-black/10 bg-white/70 px-3 py-1.5 text-[11px] font-semibold text-black/50">
+                                    Owner protected
+                                  </span>
+                                ) : isDisabled ? (
+                                  <button
+                                    onClick={() => openEnforcement("enable_admin", row)}
+                                    disabled={actionBusy}
+                                    className={`rounded-2xl px-4 py-2.5 text-xs font-semibold transition ${
+                                      actionBusy
+                                        ? "cursor-not-allowed bg-[#0a4f63]/60 text-white"
+                                        : "bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] text-white shadow-[0_16px_38px_rgba(10,79,99,0.22)] hover:shadow-[0_20px_46px_rgba(10,79,99,0.30)]"
+                                    }`}
+                                  >
+                                    {actionBusy ? "Working…" : "Re-enable Admin"}
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => openEnforcement("disable_admin", row)}
+                                    disabled={actionBusy}
+                                    className={`rounded-2xl border px-4 py-2.5 text-xs font-semibold transition ${
+                                      actionBusy
+                                        ? "cursor-not-allowed border-black/10 bg-white/70 text-black/40"
+                                        : "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                                    }`}
+                                  >
+                                    {actionBusy ? "Working…" : "Disable Admin"}
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               </div>
 
               <div className="grid gap-4 p-4 md:p-5 xl:hidden">
-                {currentAdmins.map((row) => (
-                  <article
-                    key={row.user_id}
-                    className="rounded-[24px] border border-black/10 bg-white/80 p-4 shadow-[0_14px_34px_rgba(11,31,42,0.06)]"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div className="font-semibold text-[#0b1f2a]">{row.full_name?.trim() || "Admin"}</div>
-                        <div className="mt-1 font-mono text-xs text-black/50">{shortId(row.user_id)}</div>
-                      </div>
+                {currentAdmins.map((row) => {
+                  const manageable = canManageLiveAdmin(row);
+                  const isDisabled = isLiveAdminDisabled(row);
+                  const actionBusy = busyKey === `disable_admin-${row.user_id}` || busyKey === `enable_admin-${row.user_id}`;
 
-                      <div className="flex flex-wrap gap-2">
-                        <span className={adminLevelPill(row.admin_level)}>{getAdminLevelLabel(row.admin_level)}</span>
-                        <span className={accessStatusPill(row.admin_access_status)}>
-                          {String(row.admin_access_status || "—").replaceAll("_", " ")}
-                        </span>
-                      </div>
-                    </div>
+                  return (
+                    <article
+                      key={row.user_id}
+                      className="rounded-[24px] border border-black/10 bg-white/80 p-4 shadow-[0_14px_34px_rgba(11,31,42,0.06)]"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-[#0b1f2a]">{row.full_name?.trim() || "Admin"}</div>
+                          <div className="mt-1 font-mono text-xs text-black/50">{shortId(row.user_id)}</div>
+                        </div>
 
-                    <div className="mt-4 grid gap-3">
-                      <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Approved by</div>
-                        <div className="mt-1 text-sm text-black/60">{getProfileName(row.admin_approved_by_user_id)}</div>
-                      </div>
-
-                      <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Approved at</div>
-                        <div className="mt-1 text-sm text-black/60">{fmtDate(row.admin_approved_at)}</div>
-                      </div>
-
-                      <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Owner approval note</div>
-                        <div className="mt-1 rounded-2xl border border-black/10 bg-white/80 p-3 text-sm text-black/60">
-                          {row.admin_access_note?.trim() || "No owner approval note recorded yet."}
+                        <div className="flex flex-wrap gap-2">
+                          <span className={adminLevelPill(row.admin_level)}>{getAdminLevelLabel(row.admin_level)}</span>
+                          <span className={accessStatusPill(row.admin_access_status)}>
+                            {String(row.admin_access_status || "—").replaceAll("_", " ")}
+                          </span>
                         </div>
                       </div>
-                    </div>
-                  </article>
-                ))}
+
+                      <div className="mt-4 grid gap-3">
+                        <div>
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Approved by</div>
+                          <div className="mt-1 text-sm text-black/60">{getProfileName(row.admin_approved_by_user_id)}</div>
+                        </div>
+
+                        <div>
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Approved at</div>
+                          <div className="mt-1 text-sm text-black/60">{fmtDate(row.admin_approved_at)}</div>
+                        </div>
+
+                        {row.admin_disabled_at ? (
+                          <div>
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Disabled at</div>
+                            <div className="mt-1 text-sm text-black/60">{fmtDate(row.admin_disabled_at)}</div>
+                          </div>
+                        ) : null}
+
+                        <div>
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black/40">Owner approval note</div>
+                          <div className="mt-1 rounded-2xl border border-black/10 bg-white/80 p-3 text-sm text-black/60">
+                            {row.admin_access_note?.trim() || "No owner approval note recorded yet."}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex justify-end">
+                        {!manageable ? (
+                          <span className="rounded-full border border-black/10 bg-white/70 px-3 py-1.5 text-[11px] font-semibold text-black/50">
+                            Owner protected
+                          </span>
+                        ) : isDisabled ? (
+                          <button
+                            onClick={() => openEnforcement("enable_admin", row)}
+                            disabled={actionBusy}
+                            className={`rounded-2xl px-4 py-3 text-xs font-semibold transition ${
+                              actionBusy
+                                ? "cursor-not-allowed bg-[#0a4f63]/60 text-white"
+                                : "bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] text-white shadow-[0_16px_38px_rgba(10,79,99,0.22)] hover:shadow-[0_20px_46px_rgba(10,79,99,0.30)]"
+                            }`}
+                          >
+                            {actionBusy ? "Working…" : "Re-enable Admin"}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => openEnforcement("disable_admin", row)}
+                            disabled={actionBusy}
+                            className={`rounded-2xl border px-4 py-3 text-xs font-semibold transition ${
+                              actionBusy
+                                ? "cursor-not-allowed border-black/10 bg-white/70 text-black/40"
+                                : "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                            }`}
+                          >
+                            {actionBusy ? "Working…" : "Disable Admin"}
+                          </button>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             </>
           )}
@@ -1067,6 +1307,94 @@ export default function AdminAdminsPage() {
                   }`}
                 >
                   {busyKey ? "Working…" : "Approve Access"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {enforcementModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={closeEnforcement} />
+          <div className="relative w-full max-w-xl rounded-[28px] border border-black/10 bg-white shadow-[0_26px_80px_rgba(11,31,42,0.24)]">
+            <div className="p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-sm font-semibold text-[#0b1f2a]">
+                    {enforcementModal.kind === "disable_admin" ? "Disable sub-admin access" : "Re-enable sub-admin access"}
+                  </div>
+                  <div className="mt-1 text-sm text-black/60">
+                    {enforcementModal.fullName} • <span className="font-mono text-xs">{shortId(enforcementModal.userId)}</span>
+                  </div>
+                  <div className="mt-2 text-xs text-black/50">
+                    Admin level: <span className="font-semibold text-[#0b1f2a]">{getAdminLevelLabel(enforcementModal.adminLevel)}</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={closeEnforcement}
+                  disabled={!!busyKey}
+                  className="rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white disabled:cursor-not-allowed disabled:text-black/40"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div
+                className={`mt-5 rounded-[24px] border p-4 text-sm ${
+                  enforcementModal.kind === "disable_admin"
+                    ? "border-red-200 bg-red-50 text-red-700"
+                    : "border-[rgba(14,165,163,0.22)] bg-[rgba(14,165,163,0.08)] text-[#0a4f63]"
+                }`}
+              >
+                {enforcementModal.kind === "disable_admin"
+                  ? "This will immediately block the sub-admin from using admin access until you re-enable them."
+                  : "This will restore the sub-admin’s live admin access using their current RBAC level."}
+              </div>
+
+              <div className="mt-5">
+                <div className="text-[11px] font-medium text-black/50">Reason (required)</div>
+                <textarea
+                  value={enforcementNote}
+                  onChange={(e) => setEnforcementNote(e.target.value)}
+                  rows={5}
+                  placeholder={
+                    enforcementModal.kind === "disable_admin"
+                      ? "Write why you are disabling this sub-admin..."
+                      : "Write why you are restoring this sub-admin..."
+                  }
+                  className="mt-1 w-full resize-none rounded-2xl border border-black/10 bg-white/80 px-4 py-3 text-sm text-[#0b1f2a] outline-none transition focus:border-[rgba(14,165,163,0.40)] focus:ring-4 focus:ring-[rgba(14,165,163,0.12)]"
+                />
+              </div>
+
+              <div className="mt-6 flex flex-wrap justify-end gap-2">
+                <button
+                  onClick={closeEnforcement}
+                  disabled={!!busyKey}
+                  className="rounded-2xl border border-black/10 bg-white/70 px-5 py-3 text-sm font-semibold text-[#0b1f2a] transition hover:bg-white disabled:cursor-not-allowed disabled:text-black/40"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  onClick={applyEnforcement}
+                  disabled={!!busyKey}
+                  className={`rounded-2xl px-5 py-3 text-sm font-semibold text-white transition ${
+                    enforcementModal.kind === "disable_admin"
+                      ? busyKey
+                        ? "cursor-not-allowed bg-[#7f1d1d]/70"
+                        : "bg-gradient-to-r from-[#b91c1c] to-[#7f1d1d] shadow-[0_16px_38px_rgba(185,28,28,0.24)] hover:shadow-[0_20px_46px_rgba(185,28,28,0.30)]"
+                      : busyKey
+                      ? "cursor-not-allowed bg-[#0a4f63]/60"
+                      : "bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] shadow-[0_16px_38px_rgba(10,79,99,0.28)] hover:shadow-[0_20px_46px_rgba(10,79,99,0.34)]"
+                  }`}
+                >
+                  {busyKey
+                    ? "Working…"
+                    : enforcementModal.kind === "disable_admin"
+                    ? "Disable Admin"
+                    : "Re-enable Admin"}
                 </button>
               </div>
             </div>
