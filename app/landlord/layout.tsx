@@ -1,66 +1,122 @@
 // app/landlord/layout.tsx
+"use client";
+
+import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
-export default function LandlordLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-white via-white to-[rgba(14,165,163,0.06)]">
-      {/* Top bar */}
-      <div className="sticky top-0 z-10 border-b border-black/10 bg-white/70 backdrop-blur-xl">
-        <div className="mx-auto w-full max-w-6xl px-5 py-4 md:px-8">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-[#0ea5a3] to-[#0a4f63] shadow-[0_10px_22px_rgba(10,79,99,0.22)]" />
-              <div className="leading-tight">
-                <div className="text-sm font-semibold text-[#0b1f2a]">Landlord</div>
-                <div className="text-xs text-black/60">Keyvera Platform</div>
-              </div>
-            </div>
+type NavItem = { href: string; label: string; icon: string };
 
-            <div className="flex flex-wrap items-center gap-2">
-              <Link
-                href="/landlord"
-                className="inline-flex items-center justify-center rounded-2xl border border-black/10 bg-white/70 px-4 py-2 text-sm font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
-              >
-                Dashboard
-              </Link>
-              <Link
-                href="/landlord/properties/new"
-                className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-[#0ea5a3] to-[#0a4f63] px-4 py-2 text-sm font-semibold text-white shadow-[0_16px_38px_rgba(10,79,99,0.28)] transition hover:shadow-[0_20px_46px_rgba(10,79,99,0.34)]"
-              >
-                + Create Property
-              </Link>
-              <Link
-                href="/"
-                className="hidden md:inline-flex items-center justify-center rounded-2xl border border-black/10 bg-white/70 px-4 py-2 text-sm font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
-              >
-                Exit
-              </Link>
-            </div>
-          </div>
+const NAV_ITEMS: NavItem[] = [
+  { href: "/landlord", label: "Dashboard", icon: "◎" },
+  { href: "/landlord/properties/new", label: "+ Create Property", icon: "+" },
+  { href: "/landlord/properties", label: "My Properties", icon: "▢" },
+  { href: "/landlord/messages", label: "Messages", icon: "✉" },
+  { href: "/landlord/settings", label: "Settings", icon: "⚙" },
+];
 
-          {/* Quick links (mobile) */}
-          <div className="mt-4 grid grid-cols-2 gap-2 md:hidden">
-            <MobileNavLink href="/landlord" label="Dashboard" />
-            <MobileNavLink href="/landlord/properties/new" label="Create" />
-            <MobileNavLink href="/landlord/messages" label="Messages" />
-            <MobileNavLink href="/landlord/settings" label="Settings" />
-          </div>
-        </div>
-      </div>
+const MOBILE_ITEMS: NavItem[] = [
+  { href: "/landlord", label: "Dashboard", icon: "◎" },
+  { href: "/landlord/properties/new", label: "Create", icon: "+" },
+  { href: "/landlord/messages", label: "Messages", icon: "✉" },
+  { href: "/landlord/settings", label: "Settings", icon: "⚙" },
+];
 
-      {/* Content */}
-      <div className="mx-auto w-full max-w-6xl px-5 py-8 md:px-8 md:py-10">{children}</div>
-    </div>
-  );
+function isActivePath(pathname: string, href: string) {
+  if (!pathname) return false;
+  if (href === "/landlord") return pathname === "/landlord";
+  if (href === "/landlord/properties") {
+    return pathname === "/landlord/properties" || pathname.startsWith("/landlord/properties/");
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function MobileNavLink({ href, label }: { href: string; label: string }) {
+export default function LandlordLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname() || "";
+
   return (
-    <Link
-      href={href}
-      className="inline-flex items-center justify-center rounded-2xl border border-black/10 bg-white/70 px-3 py-2 text-xs font-semibold text-[#0b1f2a] transition hover:bg-white hover:shadow-[0_10px_24px_rgba(11,31,42,0.10)]"
-    >
-      {label}
-    </Link>
+    <div className="min-h-screen bg-white">
+      <aside className="kv-sidebar" style={{ width: 260 }}>
+        <div className="kv-sidebar-header">
+          <Link href="/" className="inline-flex">
+            <Image
+              src="/keyvera-header.png"
+              alt="Keyvera"
+              width={180}
+              height={50}
+              className="h-8 w-auto"
+              priority
+            />
+          </Link>
+          <div className="kv-sidebar-eyebrow">Landlord</div>
+          <div className="kv-sidebar-title">Keyvera Platform</div>
+        </div>
+
+        <nav className="kv-sidebar-nav" aria-label="Landlord navigation">
+          {NAV_ITEMS.map((item) => {
+            const active = isActivePath(pathname, item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                data-active={active}
+                aria-current={active ? "page" : undefined}
+                className="kv-sidebar-link"
+              >
+                <span className="kv-sidebar-icon" aria-hidden="true">
+                  {item.icon}
+                </span>
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="kv-sidebar-footer">
+          <Link
+            href="/"
+            className="text-[13px] font-medium text-[var(--kv-body)] hover:text-[var(--kv-teal)] transition-colors px-2"
+          >
+            ← Exit
+          </Link>
+          <div className="px-2 pt-1 text-[11px] leading-relaxed text-[var(--kv-muted)]">
+            Manage listings, agents, and inspection activity.
+          </div>
+        </div>
+      </aside>
+
+      <div className="kv-portal-content" style={{ marginLeft: 260 }}>
+        <div className="kv-portal-content-inner">{children}</div>
+      </div>
+
+      <nav className="kv-mobile-tabs" aria-label="Landlord mobile navigation">
+        {MOBILE_ITEMS.map((item) => {
+          const active = isActivePath(pathname, item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              data-active={active}
+              aria-current={active ? "page" : undefined}
+              className="kv-mobile-tab"
+            >
+              <span className="kv-mobile-tab-icon" aria-hidden="true">
+                {item.icon}
+              </span>
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
+
+      <style>{`
+        @media (min-width: 1024px) {
+          .kv-portal-content[style*="margin-left: 260px"] { margin-left: 260px; }
+        }
+        @media (max-width: 1023px) {
+          .kv-portal-content[style*="margin-left: 260px"] { margin-left: 0 !important; }
+        }
+      `}</style>
+    </div>
   );
 }

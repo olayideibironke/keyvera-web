@@ -3,43 +3,37 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type UserRole = "tenant" | "landlord" | "agent" | "admin";
-
-const BRAND_TEAL = "#0ea5a3";
-const BRAND_TEAL_DARK = "#0a4f63";
-const BRAND_NAVY = "#0b1f2a";
-
-function isActive(pathname: string, href: string) {
-  if (href === "/") return pathname === "/";
-  return pathname === href || pathname.startsWith(href + "/");
-}
 
 function safeRole(value: unknown): UserRole | null {
   if (value === "tenant" || value === "landlord" || value === "agent" || value === "admin") return value;
   return null;
 }
 
+const NAV_LINKS = [
+  { label: "Listings", href: "#listings" },
+  { label: "How It Works", href: "#how" },
+  { label: "Roles", href: "#roles" },
+  { label: "Trust", href: "#trust" },
+];
+
+const DASHBOARD_PREFIXES = ["/admin", "/landlord", "/agent", "/tenant", "/dashboard"];
+
 export default function SiteHeader() {
-  const pathname = usePathname() || "/";
   const router = useRouter();
+  const pathname = usePathname() || "/";
+  const isDashboard = DASHBOARD_PREFIXES.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`)
+  );
 
   const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
-  const [role, setRole] = useState<UserRole | null>(null);
-
-  const nav = useMemo(
-    () => [
-      { label: "Admin", href: "/admin" },
-      { label: "Landlord", href: "/landlord" },
-      { label: "Agent", href: "/agent" },
-      { label: "Tenant", href: "/tenant" },
-    ],
-    []
-  );
+  const [, setRole] = useState<UserRole | null>(null);
 
   async function loadAuth() {
     setAuthLoading(true);
@@ -57,7 +51,11 @@ export default function SiteHeader() {
 
     setUserId(user.id);
 
-    const { data: profile } = await supabase.from("profiles").select("role").eq("user_id", user.id).maybeSingle();
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("user_id", user.id)
+      .maybeSingle();
     const r = safeRole(profile?.role);
     if (r) setRole(r);
 
@@ -74,180 +72,185 @@ export default function SiteHeader() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadAuth();
     const { data: sub } = supabase.auth.onAuthStateChange(() => {
       loadAuth();
     });
     return () => sub.subscription.unsubscribe();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return (
-    <header className="sticky top-0 z-50 border-b border-black/5 bg-white/80 backdrop-blur">
-      {/* Premium brand wash */}
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-24"
-        style={{
-          background:
-            "linear-gradient(to bottom, rgba(14,165,163,0.14), rgba(14,165,163,0.06), rgba(255,255,255,0))",
-        }}
-      />
+  useEffect(() => {
+    function onScroll() {
+      setScrolled(window.scrollY > 40);
+    }
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
-      <div className="relative mx-auto flex max-w-6xl items-center justify-between px-6 py-4 md:py-5">
+  if (isDashboard) return null;
+
+  return (
+    <header
+      className="fixed inset-x-0 top-0 z-50 transition-all duration-500"
+      style={{
+        background: scrolled ? "rgba(255,255,255,0.96)" : "rgba(255,255,255,0.85)",
+        backdropFilter: "blur(20px) saturate(1.5)",
+        WebkitBackdropFilter: "blur(20px) saturate(1.5)",
+        borderBottom: scrolled ? "1px solid var(--kv-border)" : "1px solid transparent",
+        boxShadow: scrolled ? "0 4px 16px rgba(26,60,74,0.06)" : "none",
+      }}
+    >
+      <div className="mx-auto flex h-[76px] max-w-7xl items-center justify-between px-6 lg:px-10">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-3" onClick={() => setOpen(false)}>
+        <Link href="/" className="flex items-center" onClick={() => setOpen(false)}>
           <Image
             src="/keyvera-header.png"
             alt="Keyvera"
-            width={420}
-            height={140}
-            className="h-16 w-auto md:h-20"
+            width={300}
+            height={88}
             priority
+            className="h-11 w-auto"
           />
         </Link>
 
-        {/* Desktop nav (always visible) */}
-        <nav className="hidden md:flex items-center">
-          <div className="flex items-center gap-1 rounded-full border border-black/10 bg-white/70 p-1 shadow-sm backdrop-blur">
-            {nav.map((it) => {
-              const active = isActive(pathname, it.href);
-              return (
-                <Link
-                  key={it.href}
-                  href={it.href}
-                  className={[
-                    "relative rounded-full px-4 py-2 text-sm font-semibold transition",
-                    active ? "text-white shadow-sm" : "text-slate-700 hover:bg-black/5 hover:text-slate-950",
-                  ].join(" ")}
-                  style={
-                    active ? { background: `linear-gradient(90deg, ${BRAND_TEAL}, ${BRAND_TEAL_DARK})` } : undefined
-                  }
-                >
-                  {it.label}
-                </Link>
-              );
-            })}
-          </div>
+        {/* Desktop nav */}
+        <nav className="hidden items-center gap-1 md:flex">
+          {NAV_LINKS.map((it) => (
+            <Link key={it.href} href={it.href} className="kv-nav-link">
+              {it.label}
+            </Link>
+          ))}
         </nav>
 
         {/* Right actions */}
         <div className="flex items-center gap-3">
-          {/* Mobile menu button */}
+          <Link
+            href="/tenant"
+            className="hidden md:inline-flex items-center justify-center font-medium text-white"
+            style={{
+              background: "var(--kv-teal)",
+              padding: "10px 24px",
+              borderRadius: "10px",
+              fontSize: "14px",
+              transition: "all 0.3s var(--kv-ease)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "var(--kv-teal-mid)";
+              e.currentTarget.style.transform = "translateY(-1px)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "var(--kv-teal)";
+              e.currentTarget.style.transform = "translateY(0)";
+            }}
+          >
+            Browse Properties
+          </Link>
+
+          {/* Auth link (small, preserves existing login/logout flow) */}
+          {!authLoading && (
+            <>
+              {userId ? (
+                <button
+                  onClick={logout}
+                  className="hidden md:inline-flex kv-nav-link"
+                  style={{ background: "transparent" }}
+                >
+                  Logout
+                </button>
+              ) : (
+                <Link href="/login" className="hidden md:inline-flex kv-nav-link">
+                  Login
+                </Link>
+              )}
+            </>
+          )}
+
+          {/* Mobile hamburger */}
           <button
             type="button"
-            className="md:hidden inline-flex items-center justify-center rounded-full border border-black/10 bg-white/70 px-3.5 py-3 text-sm font-semibold text-slate-900 shadow-sm backdrop-blur transition hover:bg-black/5"
             onClick={() => setOpen((v) => !v)}
-            aria-label="Open menu"
+            aria-label="Toggle menu"
+            className="md:hidden inline-flex items-center justify-center"
+            style={{
+              width: "44px",
+              height: "44px",
+              border: "1px solid var(--kv-border)",
+              borderRadius: "10px",
+              background: "rgba(255,255,255,0.6)",
+              transition: "all 0.3s var(--kv-ease)",
+            }}
           >
-            <span className="sr-only">Menu</span>
-            <div className="flex flex-col gap-1">
-              <span className="block h-0.5 w-5 rounded bg-black/70" />
-              <span className="block h-0.5 w-5 rounded bg-black/70" />
-              <span className="block h-0.5 w-5 rounded bg-black/70" />
+            <div className="flex flex-col gap-[5px]">
+              <span
+                className="block h-[2px] w-5 rounded-full bg-[var(--kv-heading)] transition-transform"
+                style={{ transform: open ? "translateY(7px) rotate(45deg)" : "none" }}
+              />
+              <span
+                className="block h-[2px] w-5 rounded-full bg-[var(--kv-heading)] transition-opacity"
+                style={{ opacity: open ? 0 : 1 }}
+              />
+              <span
+                className="block h-[2px] w-5 rounded-full bg-[var(--kv-heading)] transition-transform"
+                style={{ transform: open ? "translateY(-7px) rotate(-45deg)" : "none" }}
+              />
             </div>
           </button>
-
-          {/* Auth CTA */}
-          {authLoading ? (
-            <div className="h-11 w-28 rounded-full border border-black/10 bg-white/70 shadow-sm" />
-          ) : userId ? (
-            <button
-              onClick={logout}
-              className="group inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-black/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-              style={{ borderColor: "rgba(0,0,0,0.10)" }}
-            >
-              Logout
-              <span
-                className="ml-2 inline-block h-2 w-2 rounded-full"
-                style={{ backgroundColor: BRAND_TEAL, opacity: 0.75 }}
-              />
-            </button>
-          ) : (
-            <Link
-              href="/login"
-              className="group inline-flex items-center justify-center rounded-full border border-black/10 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-              style={{
-                background: `linear-gradient(90deg, ${BRAND_TEAL}, ${BRAND_TEAL_DARK})`,
-                boxShadow: "0 10px 24px rgba(14,165,163,0.18)",
-              }}
-            >
-              <span className="opacity-95 transition group-hover:opacity-100">Login</span>
-              <span
-                className="ml-2 inline-block h-2 w-2 rounded-full"
-                style={{ backgroundColor: "rgba(255,255,255,0.85)" }}
-              />
-            </Link>
-          )}
         </div>
       </div>
 
       {/* Mobile drawer */}
       {open ? (
-        <div className="md:hidden border-t border-black/5 bg-white/90 backdrop-blur">
-          <div className="mx-auto max-w-6xl px-6 py-4">
-            <div className="rounded-2xl border border-black/10 bg-white shadow-sm overflow-hidden">
-              <div className="p-2">
-                {nav.map((it) => {
-                  const active = isActive(pathname, it.href);
-                  return (
-                    <Link
-                      key={it.href}
-                      href={it.href}
-                      onClick={() => setOpen(false)}
-                      className={[
-                        "flex items-center justify-between rounded-xl px-4 py-3 text-sm font-semibold transition",
-                        active ? "text-white" : "text-slate-800 hover:bg-black/5",
-                      ].join(" ")}
-                      style={
-                        active ? { background: `linear-gradient(90deg, ${BRAND_TEAL}, ${BRAND_TEAL_DARK})` } : undefined
-                      }
+        <div className="md:hidden border-t border-[var(--kv-border)] bg-white/95 backdrop-blur-xl">
+          <div className="mx-auto max-w-7xl px-6 py-5">
+            <div className="flex flex-col gap-1">
+              {NAV_LINKS.map((it) => (
+                <Link
+                  key={it.href}
+                  href={it.href}
+                  onClick={() => setOpen(false)}
+                  className="rounded-xl px-4 py-3 text-[15px] font-medium text-[var(--kv-body)] hover:bg-[var(--kv-bg-section)] hover:text-[var(--kv-teal)]"
+                >
+                  {it.label}
+                </Link>
+              ))}
+            </div>
+
+            <div className="mt-4 flex flex-col gap-2 border-t border-[var(--kv-border)] pt-4">
+              <Link
+                href="/tenant"
+                onClick={() => setOpen(false)}
+                className="kv-btn kv-btn-primary w-full"
+                style={{ borderRadius: "10px" }}
+              >
+                Browse Properties
+              </Link>
+              {!authLoading && (
+                <>
+                  {userId ? (
+                    <button
+                      onClick={() => {
+                        setOpen(false);
+                        logout();
+                      }}
+                      className="kv-btn kv-btn-secondary w-full"
+                      style={{ borderRadius: "10px" }}
                     >
-                      <span>{it.label}</span>
-                      <span
-                        className="h-2 w-2 rounded-full"
-                        style={{
-                          backgroundColor: active ? "rgba(255,255,255,0.85)" : BRAND_TEAL,
-                          opacity: active ? 1 : 0.55,
-                        }}
-                      />
+                      Logout
+                    </button>
+                  ) : (
+                    <Link
+                      href="/login"
+                      onClick={() => setOpen(false)}
+                      className="kv-btn kv-btn-secondary w-full"
+                      style={{ borderRadius: "10px" }}
+                    >
+                      Login
                     </Link>
-                  );
-                })}
-              </div>
-
-              <div className="border-t border-black/10 p-3">
-                {!authLoading && userId ? (
-                  <button
-                    onClick={() => {
-                      setOpen(false);
-                      logout();
-                    }}
-                    className="inline-flex w-full items-center justify-center rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-                    style={{
-                      background: `linear-gradient(90deg, ${BRAND_TEAL}, ${BRAND_TEAL_DARK})`,
-                      boxShadow: "0 10px 24px rgba(14,165,163,0.18)",
-                    }}
-                  >
-                    Logout
-                  </button>
-                ) : (
-                  <Link
-                    href="/login"
-                    onClick={() => setOpen(false)}
-                    className="inline-flex w-full items-center justify-center rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-                    style={{
-                      background: `linear-gradient(90deg, ${BRAND_TEAL}, ${BRAND_TEAL_DARK})`,
-                      boxShadow: "0 10px 24px rgba(14,165,163,0.18)",
-                    }}
-                  >
-                    Login
-                  </Link>
-                )}
-
-                <div className="mt-3 text-center text-xs" style={{ color: BRAND_NAVY, opacity: 0.6 }}>
-                  Verified rental marketplace infrastructure.
-                </div>
-              </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -1,6 +1,8 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -416,76 +418,140 @@ function LoginPageContent() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-100">
-      <div className="mx-auto flex min-h-screen max-w-6xl items-center justify-center px-6 py-12">
-        <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-md">
-          <div className="mb-6 text-center">
-            <h1 className="text-3xl font-bold text-[#0b1f2a]">{pageTitle}</h1>
-            <p className="mt-2 text-sm text-gray-600">{pageSubtext}</p>
-          </div>
+    <main
+      className="min-h-screen flex items-center justify-center px-6 py-12"
+      style={{ background: "var(--kv-bg-section)", paddingTop: "120px" }}
+    >
+      <div
+        className="w-full"
+        style={{
+          maxWidth: "440px",
+          background: "#ffffff",
+          border: "1px solid var(--kv-border)",
+          borderRadius: "24px",
+          boxShadow: "var(--shadow-lg)",
+          padding: "40px 36px",
+        }}
+      >
+        <div className="text-center mb-7">
+          <Link href="/" className="inline-flex">
+            <Image
+              src="/keyvera-header.png"
+              alt="Keyvera"
+              width={200}
+              height={56}
+              className="h-12 w-auto"
+              priority
+            />
+          </Link>
+          <h1
+            className="mt-5"
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: "28px",
+              fontWeight: 600,
+              letterSpacing: "-0.025em",
+              color: "var(--kv-heading)",
+            }}
+          >
+            {pageTitle}
+          </h1>
+          <p className="mt-2 text-[14px] text-[var(--kv-muted)]">{pageSubtext}</p>
+        </div>
 
-          <form onSubmit={mode === "signup" ? handleSignup : handleLogin} className="space-y-4">
-            {mode === "signup" ? (
+        <form onSubmit={mode === "signup" ? handleSignup : handleLogin} className="space-y-4">
+          {mode === "signup" ? (
+            <div>
+              <label className="kv-label" htmlFor="kv-fullname">
+                Full name<span className="kv-required">*</span>
+              </label>
               <input
+                id="kv-fullname"
                 type="text"
-                placeholder="Full name"
-                className="w-full rounded-lg border p-3"
+                placeholder="Your full name"
+                className="kv-input"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 required
               />
-            ) : null}
+            </div>
+          ) : null}
 
+          <div>
+            <label className="kv-label" htmlFor="kv-email">
+              Email<span className="kv-required">*</span>
+            </label>
             <input
+              id="kv-email"
               type="email"
-              placeholder="Email"
-              className="w-full rounded-lg border p-3"
+              placeholder="you@example.com"
+              className="kv-input"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
             />
+          </div>
 
+          <div>
+            <label className="kv-label" htmlFor="kv-password">
+              Password<span className="kv-required">*</span>
+            </label>
             <input
+              id="kv-password"
               type="password"
-              placeholder="Password"
-              className="w-full rounded-lg border p-3"
+              placeholder="••••••••"
+              className="kv-input"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
-
-            {errorMsg ? <p className="text-sm text-red-500">{errorMsg}</p> : null}
-            {successMsg ? <p className="text-sm text-green-600">{successMsg}</p> : null}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-lg bg-black p-3 text-white hover:opacity-90 disabled:opacity-60"
-            >
-              {loading
-                ? mode === "signup"
-                  ? "Creating account..."
-                  : "Logging in..."
-                : mode === "signup"
-                ? "Create Account"
-                : "Login"}
-            </button>
-          </form>
-
-          <div className="mt-5 text-center text-sm text-gray-600">
-            {mode === "signup" ? "Already have an account?" : "Need an account?"}{" "}
-            <button
-              type="button"
-              onClick={() => {
-                setErrorMsg("");
-                setSuccessMsg("");
-                setMode(mode === "signup" ? "login" : "signup");
-              }}
-              className="font-semibold text-[#0a4f63] hover:underline"
-            >
-              {mode === "signup" ? "Sign in" : "Sign up"}
-            </button>
           </div>
+
+          {errorMsg ? (
+            <div className="kv-callout kv-callout-danger" style={{ fontSize: 13 }}>
+              {errorMsg}
+            </div>
+          ) : null}
+          {successMsg ? (
+            <div className="kv-callout" style={{ fontSize: 13 }}>
+              {successMsg}
+            </div>
+          ) : null}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="kv-btn kv-btn-primary w-full"
+            style={{ height: 48, fontSize: 15 }}
+          >
+            {loading
+              ? mode === "signup"
+                ? "Creating account..."
+                : "Signing in..."
+              : mode === "signup"
+              ? "Create Account"
+              : "Sign In"}
+          </button>
+        </form>
+
+        <div className="mt-6 text-center text-[14px] text-[var(--kv-muted)]">
+          {mode === "signup" ? "Already have an account?" : "Need an account?"}{" "}
+          <button
+            type="button"
+            onClick={() => {
+              setErrorMsg("");
+              setSuccessMsg("");
+              setMode(mode === "signup" ? "login" : "signup");
+            }}
+            style={{
+              color: "var(--kv-accent)",
+              fontWeight: 600,
+              textDecoration: "none",
+            }}
+            className="hover:underline"
+          >
+            {mode === "signup" ? "Sign in" : "Sign up"}
+          </button>
         </div>
       </div>
     </main>
@@ -494,12 +560,44 @@ function LoginPageContent() {
 
 function LoginPageFallback() {
   return (
-    <main className="min-h-screen bg-gray-100">
-      <div className="mx-auto flex min-h-screen max-w-6xl items-center justify-center px-6 py-12">
-        <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-md">
-          <div className="text-center">
-            <h1 className="text-3xl font-bold text-[#0b1f2a]">Keyvera Login</h1>
-            <p className="mt-2 text-sm text-gray-600">Loading…</p>
+    <main
+      className="min-h-screen flex items-center justify-center px-6 py-12"
+      style={{ background: "var(--kv-bg-section)", paddingTop: "120px" }}
+    >
+      <div
+        className="w-full"
+        style={{
+          maxWidth: "440px",
+          background: "#ffffff",
+          border: "1px solid var(--kv-border)",
+          borderRadius: "24px",
+          boxShadow: "var(--shadow-lg)",
+          padding: "40px 36px",
+        }}
+      >
+        <div className="text-center">
+          <Image
+            src="/keyvera-header.png"
+            alt="Keyvera"
+            width={200}
+            height={56}
+            className="mx-auto h-12 w-auto"
+          />
+          <h1
+            className="mt-5"
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: "28px",
+              fontWeight: 600,
+              letterSpacing: "-0.025em",
+              color: "var(--kv-heading)",
+            }}
+          >
+            Keyvera Login
+          </h1>
+          <div className="mt-6 flex flex-col items-center gap-3">
+            <span className="kv-spinner" />
+            <span className="text-[14px] text-[var(--kv-muted)]">Checking session…</span>
           </div>
         </div>
       </div>

@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npx eslint *)",
+      "Bash(npx next *)",
+      "Bash(echo \"started pid=$!\")",
+      "Bash(curl -sS -o /dev/null -w \"%{http_code}\" http://localhost:3017/)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:3017/)",
+      "Bash(curl -sS http://localhost:3017/)",
+      "PowerShell(Get-NetTCPConnection *)",
+      "Bash(curl -sS -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3019/)",
+      "Bash(curl -sS http://localhost:3019/login)",
+      "Bash(curl -sS http://localhost:3019/admin)",
+      "Bash(curl -sS http://localhost:3019/)",
+      "Bash(node *)",
+      "Bash(curl -sS -o /dev/null -w \"HTTPS supabase: %{http_code} time=%{time_total}\\\\n\" \"https://qarfugsgeynqmqobuccz.supabase.co/auth/v1/health\")",
+      "Bash(nslookup qarfugsgeynqmqobuccz.supabase.co)",
+      "Bash(nslookup qarfugsgeynqmqobuccz.supabase.co 8.8.8.8)",
+      "Bash(curl -sS -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3020/)",
+      "Bash(curl *)",
+      "Bash(disown)",
+      "Bash(grep -oE \">[A-Z][a-zA-Z][a-zA-Z &-]{3,40}<\" /tmp/tenant.html)"
+    ]
+  }
+}

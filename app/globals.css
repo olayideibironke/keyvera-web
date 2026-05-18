@@ -1,26 +1,1065 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300..700;1,300..700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:ital,wght@0,400..700;1,400..700&display=swap");
 @import "tailwindcss";
 
 :root {
+  /* Brand */
+  --kv-teal: #1a3c4a;
+  --kv-teal-mid: #245566;
+  --kv-teal-light: #2d6e7e;
+  --kv-accent: #22a676;
+  --kv-accent-hover: #1b8f66;
+  --kv-accent-soft: rgba(34, 166, 118, 0.07);
+  --kv-accent-glow: rgba(34, 166, 118, 0.12);
+
+  /* Surfaces */
+  --kv-bg: #ffffff;
+  --kv-bg-warm: #fafbfc;
+  --kv-bg-section: #f5f7f9;
+  --kv-bg-card: #ffffff;
+  --kv-sidebar-bg: #f8fafb;
+  --kv-sidebar-active: rgba(34, 166, 118, 0.08);
+
+  /* Text */
+  --kv-heading: #0f2a36;
+  --kv-body: #3d5a68;
+  --kv-muted: #7a9aaa;
+  --kv-subtle: #a3bcc8;
+
+  /* Borders */
+  --kv-border: #e8eff3;
+  --kv-border-hover: #d0dde4;
+
+  /* Status colors */
+  --kv-success: #22a676;
+  --kv-warning: #e5a623;
+  --kv-danger: #dc4a57;
+  --kv-info: #3b82f6;
+  --kv-pending: #f59e0b;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(26, 60, 74, 0.04), 0 1px 2px rgba(26, 60, 74, 0.06);
+  --shadow-md: 0 4px 16px rgba(26, 60, 74, 0.06), 0 1px 4px rgba(26, 60, 74, 0.04);
+  --shadow-lg: 0 12px 40px rgba(26, 60, 74, 0.08), 0 4px 12px rgba(26, 60, 74, 0.04);
+  --shadow-xl: 0 24px 60px rgba(26, 60, 74, 0.1), 0 8px 20px rgba(26, 60, 74, 0.05);
+
+  /* Easing */
+  --kv-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Fonts */
+  --font-display: "Playfair Display", Georgia, serif;
+  --font-body: "DM Sans", system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: var(--kv-heading);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Base typography & body */
+html,
+body {
+  background: var(--kv-bg);
+  color: var(--kv-body);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  line-height: 1.7;
+  font-weight: 400;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.font-display {
+  font-family: var(--font-display);
+  color: var(--kv-heading);
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+
+.font-mono,
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--font-mono);
+}
+
+button {
+  font-family: var(--font-body);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* ============================================================
+   LEGACY PALETTE REMAP — transforms existing Tailwind arbitrary
+   classes from the old #0ea5a3/#0a4f63/#0b1f2a palette into the
+   new --kv-* tokens without touching individual files.
+   ============================================================ */
+
+/* Heading dark (was #0b1f2a) */
+.text-\[\#0b1f2a\] {
+  color: var(--kv-heading) !important;
+}
+
+/* Teal dark (was #0a4f63 — accent text + brand) */
+.text-\[\#0a4f63\] {
+  color: var(--kv-teal) !important;
+}
+
+/* Teal mid (was #0ea5a3) */
+.text-\[\#0ea5a3\] {
+  color: var(--kv-accent) !important;
+}
+
+/* Backgrounds */
+.bg-\[\#0b1f2a\] {
+  background-color: var(--kv-teal) !important;
+}
+.bg-\[\#0a4f63\] {
+  background-color: var(--kv-teal-mid) !important;
+}
+.bg-\[\#0ea5a3\] {
+  background-color: var(--kv-accent) !important;
+}
+
+/* Login page old slate background */
+.bg-gray-100 {
+  background-color: var(--kv-bg-section) !important;
+}
+
+/* Gradients — collapse to solid brand colors */
+.from-\[\#0ea5a3\],
+.to-\[\#0ea5a3\] {
+  --tw-gradient-from: var(--kv-teal) !important;
+  --tw-gradient-to: var(--kv-teal) !important;
+}
+.from-\[\#0a4f63\],
+.to-\[\#0a4f63\] {
+  --tw-gradient-from: var(--kv-teal-mid) !important;
+  --tw-gradient-to: var(--kv-teal-mid) !important;
+}
+.from-\[\#0b1f2a\],
+.to-\[\#0b1f2a\] {
+  --tw-gradient-from: var(--kv-teal) !important;
+  --tw-gradient-to: var(--kv-teal) !important;
+}
+
+/* Tailwind gradient buttons in the legacy code rendered linear-gradient
+   inline. Many use bg-gradient-to-r with [#0ea5a3] → [#0a4f63]. Force
+   them to brand teal solid for the new look. */
+[class*="bg-gradient-to-r"][class*="from-[#0ea5a3]"][class*="to-[#0a4f63]"],
+[class*="bg-gradient-to-br"][class*="from-[#0ea5a3]"][class*="to-[#0a4f63]"],
+[class*="bg-gradient-to-b"][class*="from-[#0ea5a3]"][class*="to-[#0a4f63]"] {
+  background-image: none !important;
+  background-color: var(--kv-teal) !important;
+}
+[class*="bg-gradient-to-r"][class*="from-[#0b1f2a]"][class*="to-[#0a4f63]"] {
+  background-image: none !important;
+  background-color: var(--kv-teal) !important;
+}
+
+/* RGBA palette remap — these all show as Tailwind arbitrary classes */
+
+/* Teal alphas → accent green alphas */
+.text-\[rgba\(14\,165\,163\,0\.10\)\],
+.text-\[rgba\(14\,165\,163\,0\.06\)\] {
+  color: var(--kv-accent) !important;
+}
+.bg-\[rgba\(14\,165\,163\,0\.06\)\],
+.bg-\[rgba\(14\,165\,163\,0\.08\)\],
+.bg-\[rgba\(14\,165\,163\,0\.10\)\] {
+  background-color: var(--kv-accent-soft) !important;
+}
+.border-\[rgba\(14\,165\,163\,0\.20\)\],
+.border-\[rgba\(14\,165\,163\,0\.22\)\],
+.border-\[rgba\(14\,165\,163\,0\.25\)\],
+.border-\[rgba\(14\,165\,163\,0\.30\)\] {
+  border-color: rgba(34, 166, 118, 0.22) !important;
+}
+
+/* Dark navy alphas → new teal/border alphas */
+.bg-\[rgba\(11\,31\,42\,0\.04\)\],
+.bg-\[rgba\(11\,31\,42\,0\.06\)\] {
+  background-color: var(--kv-bg-warm) !important;
+}
+.bg-\[rgba\(11\,31\,42\,0\.08\)\],
+.bg-\[rgba\(11\,31\,42\,0\.10\)\] {
+  background-color: var(--kv-bg-section) !important;
+}
+
+/* Teal dark alphas */
+.bg-\[rgba\(10\,79\,99\,0\.06\)\],
+.bg-\[rgba\(10\,79\,99\,0\.08\)\],
+.bg-\[rgba\(10\,79\,99\,0\.10\)\] {
+  background-color: var(--kv-accent-soft) !important;
+}
+.text-\[rgba\(10\,79\,99\,0\.22\)\],
+.border-\[rgba\(10\,79\,99\,0\.22\)\] {
+  border-color: rgba(34, 166, 118, 0.22) !important;
+}
+
+/* Shadows — normalize old shadow tokens to new shadow ladder */
+.shadow-\[0_1px_3px_rgba\(26\,60\,74\,0\.04\)\,0_1px_2px_rgba\(26\,60\,74\,0\.06\)\],
+[class*="shadow-[0_10px_22px_rgba(10,79,99"],
+[class*="shadow-[0_10px_24px_rgba(11,31,42"],
+[class*="shadow-[0_10px_26px_rgba(11,31,42"],
+[class*="shadow-[0_12px_28px"],
+[class*="shadow-[0_12px_30px"],
+[class*="shadow-[0_14px_34px"],
+[class*="shadow-[0_14px_36px"],
+[class*="shadow-[0_16px_38px"],
+[class*="shadow-[0_16px_44px"],
+[class*="shadow-[0_16px_46px"],
+[class*="shadow-[0_18px_44px"],
+[class*="shadow-[0_18px_46px"],
+[class*="shadow-[0_18px_48px"],
+[class*="shadow-[0_18px_54px"],
+[class*="shadow-[0_20px_46px"],
+[class*="shadow-[0_22px_56px"],
+[class*="shadow-[0_22px_58px"],
+[class*="shadow-[0_26px_80px"] {
+  box-shadow: var(--shadow-md) !important;
+}
+
+/* "shadow-sm" Tailwind built-in keeps its meaning but we shift its value */
+.shadow-sm {
+  box-shadow: var(--shadow-sm) !important;
+}
+.shadow-md {
+  box-shadow: var(--shadow-md) !important;
+}
+.shadow-lg {
+  box-shadow: var(--shadow-lg) !important;
+}
+.shadow-xl {
+  box-shadow: var(--shadow-xl) !important;
+}
+
+/* Slate/neutral text colors should soften to new body tone */
+.text-slate-950,
+.text-slate-900 {
+  color: var(--kv-heading) !important;
+}
+.text-slate-800,
+.text-slate-700 {
+  color: var(--kv-body) !important;
+}
+.text-slate-600,
+.text-slate-500 {
+  color: var(--kv-muted) !important;
+}
+
+/* Black-alpha text overrides used everywhere in legacy code */
+.text-black\/60,
+.text-black\/65,
+.text-black\/70 {
+  color: var(--kv-body) !important;
+}
+.text-black\/40,
+.text-black\/45,
+.text-black\/50,
+.text-black\/55 {
+  color: var(--kv-muted) !important;
+}
+.text-black\/30,
+.text-black\/35 {
+  color: var(--kv-subtle) !important;
+}
+
+/* Black-alpha borders */
+.border-black\/5,
+.border-black\/10,
+.border-black\/15 {
+  border-color: var(--kv-border) !important;
+}
+.border-black\/20 {
+  border-color: var(--kv-border-hover) !important;
+}
+
+/* Black-alpha backgrounds */
+.bg-black\/\[0\.03\],
+.bg-black\/5 {
+  background-color: var(--kv-bg-warm) !important;
+}
+
+/* White/70 etc translucent surfaces — make solid white-card */
+.bg-white\/70,
+.bg-white\/75,
+.bg-white\/80,
+.bg-white\/85,
+.bg-white\/90 {
+  background-color: var(--kv-bg-card) !important;
+}
+
+/* Slate-50 used as inset background */
+.bg-slate-50 {
+  background-color: var(--kv-bg-section) !important;
+}
+
+/* Amber semantic states → new warning */
+.text-amber-900,
+.text-amber-800 {
+  color: #92400e !important;
+}
+.bg-amber-50,
+.bg-amber-50\/70 {
+  background-color: rgba(245, 158, 11, 0.07) !important;
+}
+.border-amber-200 {
+  border-color: rgba(245, 158, 11, 0.22) !important;
+}
+
+/* Red semantic → danger */
+.text-red-500,
+.text-red-700,
+.text-red-800 {
+  color: var(--kv-danger) !important;
+}
+.bg-red-50 {
+  background-color: rgba(220, 74, 87, 0.06) !important;
+}
+.bg-red-100:hover,
+.hover\:bg-red-100:hover {
+  background-color: rgba(220, 74, 87, 0.12) !important;
+}
+.border-red-200 {
+  border-color: rgba(220, 74, 87, 0.22) !important;
+}
+
+/* Green semantic → accent */
+.text-green-600 {
+  color: var(--kv-accent) !important;
+}
+
+/* Page background gradients from various layouts — flatten to white */
+.bg-gradient-to-b.from-white {
+  background-image: none !important;
+  background-color: var(--kv-bg) !important;
+}
+
+/* Backdrop-blur stays but soften with new bg */
+[class*="backdrop-blur"] {
+  background-color: rgba(255, 255, 255, 0.95);
+}
+
+/* The radial-gradient inline-styles used in legacy hero washes —
+   we cannot intercept inline style backgrounds, so accept those as-is. */
+
+/* ============================================================
+   COMPONENT UTILITIES — used by new rewritten files
+   ============================================================ */
+
+.kv-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--kv-accent);
+}
+
+.kv-tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kv-accent);
+  font-weight: 500;
+}
+
+.kv-card {
+  background: var(--kv-bg-card);
+  border: 1px solid var(--kv-border);
+  border-radius: 22px;
+  transition: all 0.45s var(--kv-ease);
+  position: relative;
+}
+
+.kv-section {
+  padding-top: 96px;
+  padding-bottom: 96px;
+}
+
+@media (max-width: 640px) {
+  .kv-section {
+    padding-top: 64px;
+    padding-bottom: 64px;
+  }
+}
+
+/* Hero pattern */
+.kv-hero-pattern {
+  background-image:
+    radial-gradient(circle at 20% 25%, rgba(34, 166, 118, 0.045), transparent 55%),
+    radial-gradient(circle at 80% 60%, rgba(45, 110, 126, 0.04), transparent 55%),
+    radial-gradient(circle, #e8eff3 1px, transparent 1px);
+  background-size: auto, auto, 32px 32px;
+  background-position: 0 0, 0 0, 0 0;
+  -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 45%, #000 35%, transparent 100%);
+  mask-image: radial-gradient(ellipse 90% 80% at 50% 45%, #000 35%, transparent 100%);
+}
+
+/* Reveal animations */
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.7s var(--kv-ease), transform 0.7s var(--kv-ease);
+  will-change: opacity, transform;
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeSlideLeft {
+  from { opacity: 0; transform: translateX(40px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes kvPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.45; transform: scale(1.15); }
+}
+@keyframes kvSpin {
+  to { transform: rotate(360deg); }
+}
+@keyframes kvShimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.kv-hero-anim {
+  opacity: 0;
+  animation: fadeSlideUp 0.9s var(--kv-ease) forwards;
+}
+.kv-hero-anim-right {
+  opacity: 0;
+  animation: fadeSlideLeft 1s var(--kv-ease) forwards;
+}
+.kv-pulse-dot {
+  animation: kvPulse 2s var(--kv-ease) infinite;
+}
+
+/* Loading spinner */
+.kv-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--kv-border);
+  border-top-color: var(--kv-accent);
+  animation: kvSpin 0.8s linear infinite;
+}
+
+/* Skeleton shimmer */
+.kv-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--kv-border) 0%,
+    var(--kv-bg-section) 50%,
+    var(--kv-border) 100%
+  );
+  background-size: 200% 100%;
+  animation: kvShimmer 1.4s ease-in-out infinite;
+  border-radius: 12px;
+}
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+
+.kv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: -0.005em;
+  padding: 12px 24px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  transition: all 0.35s var(--kv-ease);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.kv-btn-primary {
+  background: var(--kv-teal);
+  color: #ffffff;
+  box-shadow: var(--shadow-md);
+}
+.kv-btn-primary:hover:not(:disabled) {
+  background: var(--kv-teal-mid);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lg);
+}
+.kv-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.kv-btn-secondary {
+  background: transparent;
+  color: var(--kv-teal);
+  border: 1.5px solid var(--kv-border-hover);
+}
+.kv-btn-secondary:hover:not(:disabled) {
+  border-color: var(--kv-teal);
+  background: var(--kv-bg-section);
+  transform: translateY(-1px);
+}
+
+.kv-btn-accent {
+  background: var(--kv-accent);
+  color: #ffffff;
+}
+.kv-btn-accent:hover:not(:disabled) {
+  background: var(--kv-accent-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.kv-btn-danger {
+  background: var(--kv-danger);
+  color: #ffffff;
+}
+.kv-btn-danger:hover:not(:disabled) {
+  background: #c43947;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.kv-btn-ghost-light {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.kv-btn-ghost-light:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: translateY(-1px);
+}
+
+.kv-btn-light {
+  background: #ffffff;
+  color: var(--kv-teal);
+  box-shadow: var(--shadow-md);
+}
+.kv-btn-light:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lg);
+}
+
+.kv-btn-sm {
+  padding: 8px 16px;
+  font-size: 13px;
+  border-radius: 10px;
+}
+
+/* ============================================================
+   FORMS — universal input/select/textarea styling
+   ============================================================ */
+
+.kv-input,
+.kv-select,
+.kv-textarea {
+  width: 100%;
+  border: 1px solid var(--kv-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--kv-heading);
+  background: #ffffff;
+  transition: border-color 0.25s var(--kv-ease), box-shadow 0.25s var(--kv-ease);
+  outline: none;
+}
+.kv-input,
+.kv-select {
+  height: 48px;
+}
+.kv-textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+.kv-input:focus,
+.kv-select:focus,
+.kv-textarea:focus {
+  border-color: var(--kv-accent);
+  box-shadow: 0 0 0 3px var(--kv-accent-glow);
+}
+.kv-input::placeholder,
+.kv-textarea::placeholder {
+  color: var(--kv-subtle);
+}
+
+.kv-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--kv-heading);
+  margin-bottom: 6px;
+}
+.kv-required {
+  color: var(--kv-danger);
+  margin-left: 2px;
+}
+.kv-help {
+  font-size: 13px;
+  color: var(--kv-muted);
+  margin-top: 4px;
+  font-style: italic;
+}
+.kv-error {
+  font-size: 13px;
+  color: var(--kv-danger);
+  margin-top: 4px;
+}
+
+/* Globally upgrade ANY input/select/textarea inside the app that
+   doesn't already opt-out, so legacy pages also get the new feel. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(.kv-bare),
+select:not(.kv-bare),
+textarea:not(.kv-bare) {
+  font-family: var(--font-body);
+  transition: border-color 0.25s var(--kv-ease), box-shadow 0.25s var(--kv-ease);
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(.kv-bare):focus,
+select:not(.kv-bare):focus,
+textarea:not(.kv-bare):focus {
+  border-color: var(--kv-accent) !important;
+  box-shadow: 0 0 0 3px var(--kv-accent-glow) !important;
+  outline: none !important;
+}
+
+/* ============================================================
+   BADGES / STATUS PILLS
+   ============================================================ */
+
+.kv-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 8px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.kv-badge-pending,
+.kv-badge-amber {
+  background: rgba(245, 158, 11, 0.1);
+  color: #b45309;
+  border-color: rgba(245, 158, 11, 0.22);
+}
+.kv-badge-success,
+.kv-badge-verified,
+.kv-badge-approved,
+.kv-badge-live {
+  background: rgba(34, 166, 118, 0.08);
+  color: var(--kv-accent);
+  border-color: rgba(34, 166, 118, 0.22);
+}
+.kv-badge-danger,
+.kv-badge-rejected,
+.kv-badge-suspended {
+  background: rgba(220, 74, 87, 0.08);
+  color: var(--kv-danger);
+  border-color: rgba(220, 74, 87, 0.22);
+}
+.kv-badge-neutral,
+.kv-badge-draft {
+  background: rgba(122, 154, 170, 0.1);
+  color: var(--kv-muted);
+  border-color: var(--kv-border);
+}
+.kv-badge-info {
+  background: rgba(59, 130, 246, 0.08);
+  color: var(--kv-info);
+  border-color: rgba(59, 130, 246, 0.22);
+}
+
+/* ============================================================
+   STAT CARD
+   ============================================================ */
+
+.kv-stat-card {
+  background: var(--kv-bg-card);
+  border: 1px solid var(--kv-border);
+  border-radius: 18px;
+  padding: 24px 28px;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.35s var(--kv-ease), box-shadow 0.35s var(--kv-ease);
+}
+.kv-stat-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--kv-teal), var(--kv-accent));
+}
+.kv-stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.kv-stat-number {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--kv-teal);
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+}
+.kv-stat-label {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--kv-muted);
+}
+
+/* ============================================================
+   INFO CALLOUT
+   ============================================================ */
+
+.kv-callout {
+  border-radius: 14px;
+  padding: 16px 20px;
+  border-left: 3px solid var(--kv-accent);
+  background: var(--kv-accent-soft);
+  font-size: 14px;
+  color: var(--kv-body);
+  line-height: 1.65;
+}
+.kv-callout-info {
+  border-left-color: var(--kv-info);
+  background: rgba(59, 130, 246, 0.04);
+}
+.kv-callout-warn {
+  border-left-color: var(--kv-warning);
+  background: rgba(229, 166, 35, 0.06);
+}
+.kv-callout-danger {
+  border-left-color: var(--kv-danger);
+  background: rgba(220, 74, 87, 0.05);
+}
+
+/* ============================================================
+   SIDEBAR (dashboard layouts)
+   ============================================================ */
+
+.kv-sidebar {
+  position: fixed;
+  inset-block: 0;
+  left: 0;
+  width: 280px;
+  background: var(--kv-sidebar-bg);
+  border-right: 1px solid var(--kv-border);
+  display: flex;
+  flex-direction: column;
+  padding: 28px 20px 24px;
+  z-index: 40;
+  overflow-y: auto;
+}
+
+.kv-sidebar-header {
+  padding: 0 8px 24px;
+  border-bottom: 1px solid var(--kv-border);
+  margin-bottom: 20px;
+}
+.kv-sidebar-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--kv-muted);
+  margin-top: 12px;
+}
+.kv-sidebar-title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--kv-heading);
+  letter-spacing: -0.02em;
+  margin-top: 4px;
+}
+
+.kv-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+.kv-sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--kv-body);
+  transition: all 0.25s var(--kv-ease);
+  position: relative;
+  border-left: 3px solid transparent;
+  padding-left: 13px;
+}
+.kv-sidebar-link:hover {
+  background: rgba(34, 166, 118, 0.05);
+  color: var(--kv-teal);
+}
+.kv-sidebar-link[data-active="true"] {
+  background: var(--kv-sidebar-active);
+  color: var(--kv-accent);
+  font-weight: 600;
+  border-left-color: var(--kv-accent);
+}
+.kv-sidebar-icon {
+  font-size: 17px;
+  width: 22px;
+  text-align: center;
+}
+
+.kv-sidebar-footer {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--kv-border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Content area beside sidebar */
+.kv-portal-content {
+  margin-left: 280px;
+  min-height: 100vh;
+  background: #ffffff;
+}
+.kv-portal-content-inner {
+  padding: 36px 40px 64px;
+  max-width: 1320px;
+}
+
+.kv-portal-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 28px;
+}
+.kv-portal-title {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--kv-heading);
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+.kv-portal-subtitle {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--kv-muted);
+}
+
+/* Mobile bottom-tab bar */
+.kv-mobile-tabs {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border-top: 1px solid var(--kv-border);
+  display: none;
+  z-index: 40;
+  box-shadow: 0 -2px 16px rgba(26, 60, 74, 0.05);
+}
+.kv-mobile-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--kv-muted);
+  transition: color 0.25s var(--kv-ease);
+}
+.kv-mobile-tab[data-active="true"] {
+  color: var(--kv-accent);
+}
+.kv-mobile-tab-icon {
+  font-size: 18px;
+}
+
+@media (max-width: 1023px) {
+  .kv-sidebar { display: none; }
+  .kv-portal-content { margin-left: 0; }
+  .kv-portal-content-inner { padding: 24px 20px 96px; }
+  .kv-mobile-tabs { display: flex; }
+}
+@media (max-width: 640px) {
+  .kv-portal-content-inner { padding: 20px 16px 100px; }
+  .kv-portal-title { font-size: 24px; }
+}
+
+/* ============================================================
+   LISTING / CARD HOVERS (homepage)
+   ============================================================ */
+
+.kv-listing-img {
+  transition: transform 0.7s var(--kv-ease);
+}
+.kv-listing-card:hover .kv-listing-img { transform: scale(1.05); }
+.kv-listing-card { overflow: hidden; }
+.kv-listing-card:hover {
+  transform: translateY(-6px);
+  box-shadow: var(--shadow-xl);
+  border-color: rgba(34, 166, 118, 0.35);
+}
+
+.kv-step-circle { transition: all 0.5s var(--kv-ease); }
+.kv-step-card:hover .kv-step-circle {
+  border-color: var(--kv-accent);
+  color: var(--kv-accent);
+  box-shadow: 0 0 0 6px var(--kv-accent-glow), var(--shadow-md);
+}
+.kv-step-card:hover .kv-step-number { color: var(--kv-accent); }
+
+.kv-role-card { overflow: hidden; }
+.kv-role-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: 100%;
+  background: linear-gradient(90deg, var(--kv-accent), var(--kv-teal-light));
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.6s var(--kv-ease);
+}
+.kv-role-card:hover::after { transform: scaleX(1); }
+.kv-role-card:hover {
+  transform: translateY(-6px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--kv-border-hover);
+}
+.kv-role-card .kv-role-arrow { transition: gap 0.4s var(--kv-ease), color 0.4s var(--kv-ease); }
+.kv-role-card:hover .kv-role-arrow span:last-child { transform: translateX(4px); }
+
+.kv-bento-card { overflow: hidden; }
+.kv-bento-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 22px;
+  background: radial-gradient(circle at top right, var(--kv-accent-glow), transparent 60%);
+  opacity: 0;
+  transition: opacity 0.5s var(--kv-ease);
+  pointer-events: none;
+}
+.kv-bento-card:hover::before { opacity: 1; }
+.kv-bento-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--kv-border-hover);
+}
+
+.kv-trust-panel {
+  position: relative;
+  overflow: hidden;
+}
+.kv-trust-panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--kv-teal), var(--kv-accent), transparent);
+}
+.kv-trust-panel:hover {
+  box-shadow: var(--shadow-lg);
+  border-color: var(--kv-border-hover);
+}
+
+.kv-nav-link {
+  position: relative;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--kv-body);
+  padding: 8px 14px;
+  border-radius: 10px;
+  transition: all 0.3s var(--kv-ease);
+}
+.kv-nav-link:hover {
+  color: var(--kv-teal);
+  background: var(--kv-bg-section);
+}
+
+.kv-view-cta {
+  background: var(--kv-accent-soft);
+  color: var(--kv-accent);
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.35s var(--kv-ease);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.kv-listing-card:hover .kv-view-cta,
+.kv-view-cta:hover {
+  background: var(--kv-accent);
+  color: #ffffff;
+}
+
+.kv-save-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid var(--kv-border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--kv-muted);
+  transition: all 0.35s var(--kv-ease);
+  box-shadow: var(--shadow-sm);
+}
+.kv-save-btn:hover {
+  color: #e0395f;
+  border-color: #f3c4cf;
+  transform: scale(1.06);
 }
