@@ -1042,6 +1042,15 @@ export default function LandlordPropertiesPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           <GhostButton onClick={load}>Refresh</GhostButton>
+          <GhostButton
+            onClick={async () => {
+              await supabase.auth.signOut();
+              router.replace("/");
+              router.refresh();
+            }}
+          >
+            Sign Out
+          </GhostButton>
           <PrimaryButton onClick={() => router.push("/landlord/properties/new")}>+ Create Property</PrimaryButton>
         </div>
       </div>

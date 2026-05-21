@@ -473,6 +473,7 @@ export default function AgentPortalPage() {
   const [hasSession, setHasSession] = useState(false);
   const [authorized, setAuthorized] = useState(false);
   const [redirectingTo, setRedirectingTo] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<InspectionRow[]>([]);
@@ -499,6 +500,17 @@ export default function AgentPortalPage() {
   const [kycSubmitting, setKycSubmitting] = useState(false);
   const [kycMessage, setKycMessage] = useState<string | null>(null);
   const [kycError, setKycError] = useState<string | null>(null);
+
+  async function handleSignOut() {
+    setSigningOut(true);
+    try {
+      await supabase.auth.signOut();
+      router.replace("/");
+      router.refresh();
+    } finally {
+      setSigningOut(false);
+    }
+  }
 
   async function loadRevenueRules() {
     try {
@@ -1088,6 +1100,14 @@ export default function AgentPortalPage() {
             >
               Open Full Queue
             </Link>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={signingOut}
+              className="rounded-2xl border border-red-200 bg-red-50/80 px-5 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-50 hover:shadow-[0_12px_30px_rgba(127,29,29,0.10)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {signingOut ? "Signing Out..." : "Sign Out"}
+            </button>
           </div>
         </div>
       </div>

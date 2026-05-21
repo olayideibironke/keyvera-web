@@ -186,13 +186,7 @@ function RevenueMetric({
   );
 }
 
-function SmallRuleCard({
-  title,
-  body,
-}: {
-  title: string;
-  body: string;
-}) {
+function SmallRuleCard({ title, body }: { title: string; body: string }) {
   return (
     <div className="rounded-[24px] border border-black/10 bg-white/80 p-5 shadow-[0_14px_34px_rgba(11,31,42,0.06)]">
       <div className="text-sm font-semibold text-[#0b1f2a]">{title}</div>
@@ -262,16 +256,35 @@ export default function AdminHome() {
   const [authorized, setAuthorized] = useState(false);
   const [rulesLoading, setRulesLoading] = useState(true);
   const [rulesSaving, setRulesSaving] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   const [rules, setRules] = useState<RevenueRules>(DEFAULT_RULES);
 
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  async function signOutAdmin() {
+    setSigningOut(true);
+    setSaveMessage(null);
+    setSaveError(null);
+
+    try {
+      await supabase.auth.signOut({ scope: "global" });
+      setAuthorized(false);
+      router.replace("/");
+      router.refresh();
+    } catch (e: any) {
+      setSaveError(e?.message ?? "Failed to sign out.");
+    } finally {
+      setSigningOut(false);
+    }
+  }
+
   useEffect(() => {
     (async () => {
       try {
         const { data: userData, error: userErr } = await supabase.auth.getUser();
+
         if (userErr || !userData.user) {
           router.replace(`/login?next=${encodeURIComponent(pathname || "/admin")}`);
           return;
@@ -288,8 +301,10 @@ export default function AdminHome() {
           return;
         }
 
-        if (profile.role !== "admin") {
-          router.replace(roleToPath(profile.role));
+        const role = String(profile.role || "").toLowerCase();
+
+        if (role !== "admin") {
+          router.replace(roleToPath(role));
           return;
         }
 
@@ -309,11 +324,7 @@ export default function AdminHome() {
           setRules(DEFAULT_RULES);
         }
       } catch (e: any) {
-        if (!authorized) {
-          router.replace("/login");
-          return;
-        }
-        setSaveError(e?.message ?? "Failed to load revenue rules.");
+        setSaveError(e?.message ?? "Failed to load admin overview.");
       } finally {
         setRulesLoading(false);
         setLoading(false);
@@ -371,7 +382,7 @@ export default function AdminHome() {
   if (!authorized) return null;
 
   return (
-    <main className="min-h-[calc(100vh-140px)]">
+    <main className="min-h-[calc(100vh-140px)] space-y-6 px-4 py-6 md:px-6 lg:px-8">
       <section className="rounded-[32px] border border-black/10 bg-white/70 p-6 shadow-[0_18px_54px_rgba(11,31,42,0.10)] backdrop-blur-xl md:p-7">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div className="min-w-0 flex-1">
@@ -397,7 +408,7 @@ export default function AdminHome() {
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:w-auto">
+          <div className="grid gap-3 sm:grid-cols-3 xl:w-auto">
             <Link
               href="/admin/metrics"
               className="inline-flex min-h-[52px] items-center justify-center rounded-2xl bg-[#0b1f2a] px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_48px_rgba(11,31,42,0.22)] transition hover:shadow-[0_22px_56px_rgba(11,31,42,0.28)]"
@@ -411,6 +422,15 @@ export default function AdminHome() {
             >
               Process Verifications
             </Link>
+
+            <button
+              type="button"
+              onClick={signOutAdmin}
+              disabled={signingOut}
+              className="inline-flex min-h-[52px] items-center justify-center rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700 shadow-[0_14px_36px_rgba(127,29,29,0.08)] transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {signingOut ? "Signing Out..." : "Sign Out"}
+            </button>
           </div>
         </div>
 
@@ -435,7 +455,7 @@ export default function AdminHome() {
         </div>
       </section>
 
-      <section className="mt-6 rounded-[32px] border border-black/10 bg-white/70 p-6 shadow-[0_18px_54px_rgba(11,31,42,0.10)] backdrop-blur-xl md:p-7">
+      <section className="rounded-[32px] border border-black/10 bg-white/70 p-6 shadow-[0_18px_54px_rgba(11,31,42,0.10)] backdrop-blur-xl md:p-7">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -608,7 +628,7 @@ export default function AdminHome() {
         </div>
       </section>
 
-      <section className="mt-6 grid gap-4 md:grid-cols-2">
+      <section className="grid gap-4 md:grid-cols-2">
         {NAV_ITEMS.map((item) => (
           <Link
             key={item.href}
