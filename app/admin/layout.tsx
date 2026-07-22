@@ -1,18 +1,29 @@
-// app/admin/layout.tsx
 "use client";
 
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-type NavItem = { href: string; label: string; icon: string };
+type NavItem = {
+  href: string;
+  label: string;
+  icon: string;
+};
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/admin", label: "Overview", icon: "◎" },
   { href: "/admin/metrics", label: "Metrics", icon: "▲" },
   { href: "/admin/agents", label: "Agent Verifications", icon: "✓" },
-  { href: "/admin/landlords", label: "Landlord Verifications", icon: "⚑" },
-  { href: "/admin/properties", label: "Property Approvals", icon: "▢" },
+  {
+    href: "/admin/landlords",
+    label: "Landlord Verifications",
+    icon: "⚑",
+  },
+  {
+    href: "/admin/properties",
+    label: "Property Approvals",
+    icon: "▢",
+  },
   { href: "/admin/audit", label: "Audit Log", icon: "≡" },
 ];
 
@@ -26,16 +37,26 @@ const MOBILE_ITEMS: NavItem[] = [
 ];
 
 function isActivePath(pathname: string, href: string) {
-  if (!pathname) return false;
-  if (href === "/admin") return pathname === "/admin";
+  if (!pathname) {
+    return false;
+  }
+
+  if (href === "/admin") {
+    return pathname === "/admin";
+  }
+
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default function AdminLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const pathname = usePathname() || "";
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="kv-portal-layout">
       <aside className="kv-sidebar">
         <div className="kv-sidebar-header">
           <Link href="/" className="inline-flex">
@@ -48,13 +69,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               priority
             />
           </Link>
+
           <div className="kv-sidebar-eyebrow">Keyvera Admin</div>
           <div className="kv-sidebar-title">Control Center</div>
         </div>
 
-        <nav className="kv-sidebar-nav" aria-label="Admin navigation">
+        <nav
+          className="kv-sidebar-nav"
+          aria-label="Admin navigation"
+        >
           {NAV_ITEMS.map((item) => {
             const active = isActivePath(pathname, item.href);
+
             return (
               <Link
                 key={item.href}
@@ -63,9 +89,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 aria-current={active ? "page" : undefined}
                 className="kv-sidebar-link"
               >
-                <span className="kv-sidebar-icon" aria-hidden="true">
+                <span
+                  className="kv-sidebar-icon"
+                  aria-hidden="true"
+                >
                   {item.icon}
                 </span>
+
                 <span>{item.label}</span>
               </Link>
             );
@@ -75,23 +105,31 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="kv-sidebar-footer">
           <Link
             href="/"
-            className="text-[13px] font-medium text-[var(--kv-body)] hover:text-[var(--kv-teal)] transition-colors px-2"
+            className="px-2 text-[13px] font-medium text-[var(--kv-body)] transition-colors hover:text-[var(--kv-teal)]"
           >
             ← Exit Admin
           </Link>
+
           <div className="px-2 pt-1 text-[11px] leading-relaxed text-[var(--kv-muted)]">
-            Enforcement actions and audit history live here. Keep it logged.
+            Enforcement actions and audit history live here.
+            Keep it logged.
           </div>
         </div>
       </aside>
 
       <div className="kv-portal-content">
-        <div className="kv-portal-content-inner">{children}</div>
+        <div className="kv-portal-content-inner">
+          {children}
+        </div>
       </div>
 
-      <nav className="kv-mobile-tabs" aria-label="Admin mobile navigation">
+      <nav
+        className="kv-mobile-tabs"
+        aria-label="Admin mobile navigation"
+      >
         {MOBILE_ITEMS.map((item) => {
           const active = isActivePath(pathname, item.href);
+
           return (
             <Link
               key={item.href}
@@ -100,9 +138,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               aria-current={active ? "page" : undefined}
               className="kv-mobile-tab"
             >
-              <span className="kv-mobile-tab-icon" aria-hidden="true">
+              <span
+                className="kv-mobile-tab-icon"
+                aria-hidden="true"
+              >
                 {item.icon}
               </span>
+
               <span>{item.label}</span>
             </Link>
           );

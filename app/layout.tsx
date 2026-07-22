@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./responsive-shell.css";
 import SiteHeader from "@/app/ui/site-header";
 import SiteFooter from "@/app/ui/site-footer";
 
@@ -16,9 +17,13 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        <div className="min-h-screen bg-[var(--kv-bg)] text-[var(--kv-body)]">
+        <div className="min-h-screen w-full max-w-full overflow-x-clip bg-[var(--kv-bg)] text-[var(--kv-body)]">
           <SiteHeader />
-          <main>{children}</main>
+
+          <main className="w-full min-w-0 max-w-full overflow-x-clip">
+            {children}
+          </main>
+
           <SiteFooter />
         </div>
       </body>

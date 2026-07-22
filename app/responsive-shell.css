@@ -1,0 +1,314 @@
+/*
+  Keyvera universal responsive shell
+*/
+
+:root {
+  --kv-page-max: 1760px;
+  --kv-page-wide: 1600px;
+  --kv-page-standard: 1440px;
+  --kv-page-reading: 1100px;
+  --kv-sidebar-width: 260px;
+  --kv-page-padding: clamp(16px, 2.5vw, 48px);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+body {
+  margin: 0;
+}
+
+body > div,
+main,
+section,
+article,
+aside,
+header,
+footer,
+nav,
+form,
+fieldset,
+div {
+  min-width: 0;
+}
+
+img,
+picture,
+video,
+canvas,
+svg,
+iframe {
+  display: block;
+  max-width: 100%;
+}
+
+img,
+video {
+  height: auto;
+}
+
+button,
+input,
+select,
+textarea {
+  max-width: 100%;
+  min-width: 0;
+}
+
+textarea {
+  resize: vertical;
+}
+
+table {
+  max-width: 100%;
+  border-collapse: collapse;
+}
+
+pre,
+code,
+.font-mono,
+.break-responsive {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/*
+  Existing Tailwind containers across the application.
+*/
+
+.max-w-7xl {
+  width: 100% !important;
+  max-width: var(--kv-page-max) !important;
+}
+
+.max-w-6xl {
+  width: 100% !important;
+  max-width: var(--kv-page-wide) !important;
+}
+
+.max-w-5xl {
+  width: 100% !important;
+  max-width: var(--kv-page-standard) !important;
+}
+
+.max-w-4xl {
+  width: 100% !important;
+  max-width: 1280px !important;
+}
+
+.max-w-3xl {
+  width: 100% !important;
+  max-width: var(--kv-page-reading) !important;
+}
+
+/*
+  Main reusable website shells.
+*/
+
+.kv-responsive-shell {
+  width: 100%;
+  max-width: var(--kv-page-max);
+  margin-inline: auto;
+  padding-inline: var(--kv-page-padding);
+}
+
+.kv-responsive-shell-wide {
+  width: 100%;
+  max-width: 1920px;
+  margin-inline: auto;
+  padding-inline: var(--kv-page-padding);
+}
+
+.kv-responsive-section {
+  width: 100%;
+  min-width: 0;
+}
+
+/*
+  Portal layouts.
+*/
+
+.kv-portal-layout {
+  width: 100%;
+  min-height: 100vh;
+  background: white;
+}
+
+.kv-portal-content {
+  width: calc(100% - var(--kv-sidebar-width));
+  min-width: 0;
+  min-height: 100vh;
+  margin-left: var(--kv-sidebar-width);
+}
+
+.kv-portal-content-inner {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  margin-inline: auto;
+  padding: 32px var(--kv-page-padding) 48px;
+}
+
+/*
+  Keep flexible content from forcing overflow.
+*/
+
+.flex > *,
+.grid > * {
+  min-width: 0;
+}
+
+.overflow-x-auto,
+.kv-table-scroll {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.overflow-x-auto table,
+.kv-table-scroll table {
+  width: 100%;
+}
+
+/*
+  Avoid oversized fixed-width elements breaking smaller screens.
+*/
+
+[class*="w-["] {
+  max-width: 100%;
+}
+
+[class*="min-w-["] {
+  max-width: 100%;
+}
+
+/*
+  Large screens.
+*/
+
+@media (min-width: 1800px) {
+  .kv-portal-content-inner {
+    padding-left: 56px;
+    padding-right: 56px;
+  }
+}
+
+/*
+  Desktops and laptops.
+*/
+
+@media (max-width: 1799px) {
+  .max-w-7xl,
+  .max-w-6xl,
+  .max-w-5xl,
+  .max-w-4xl,
+  .max-w-3xl {
+    max-width: calc(100vw - 48px) !important;
+  }
+}
+
+/*
+  Tablets and smaller portal screens.
+*/
+
+@media (max-width: 1023px) {
+  :root {
+    --kv-page-padding: 20px;
+  }
+
+  .max-w-7xl,
+  .max-w-6xl,
+  .max-w-5xl,
+  .max-w-4xl,
+  .max-w-3xl {
+    max-width: 100% !important;
+  }
+
+  .kv-sidebar {
+    display: none !important;
+  }
+
+  .kv-portal-content {
+    width: 100%;
+    margin-left: 0;
+    padding-bottom: 84px;
+  }
+
+  .kv-portal-content-inner {
+    width: 100%;
+    max-width: 100%;
+    padding: 24px 20px 32px;
+  }
+}
+
+/*
+  Phones.
+*/
+
+@media (max-width: 640px) {
+  :root {
+    --kv-page-padding: 16px;
+  }
+
+  .kv-responsive-shell,
+  .kv-responsive-shell-wide {
+    padding-inline: 16px;
+  }
+
+  .kv-portal-content-inner {
+    padding: 20px 16px 28px;
+  }
+
+  main .px-10,
+  main .px-8,
+  main .px-6 {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  main .py-10,
+  main .py-8 {
+    padding-top: 24px;
+    padding-bottom: 24px;
+  }
+
+  main .p-10,
+  main .p-8 {
+    padding: 20px;
+  }
+
+  main .gap-10,
+  main .gap-8 {
+    gap: 20px;
+  }
+
+  main .rounded-\[40px\],
+  main .rounded-\[36px\],
+  main .rounded-\[34px\] {
+    border-radius: 24px;
+  }
+
+  main .rounded-\[32px\],
+  main .rounded-\[30px\],
+  main .rounded-\[28px\] {
+    border-radius: 22px;
+  }
+
+  .kv-mobile-full-button {
+    width: 100%;
+  }
+}
