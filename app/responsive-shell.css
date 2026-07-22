@@ -53,11 +53,6 @@ iframe {
   max-width: 100%;
 }
 
-img,
-video {
-  height: auto;
-}
-
 button,
 input,
 select,
@@ -194,6 +189,16 @@ code,
 
 [class*="min-w-["] {
   max-width: 100%;
+}
+
+/*
+  Protect shared header and footer branding.
+*/
+
+header img,
+footer img {
+  flex-shrink: 0;
+  object-fit: contain;
 }
 
 /*

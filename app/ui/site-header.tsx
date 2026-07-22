@@ -141,7 +141,7 @@ export default function SiteHeader() {
           : "none",
       }}
     >
-      <div className="kv-responsive-shell flex h-[76px] items-center justify-between gap-4">
+      <div className="kv-responsive-shell flex h-[88px] items-center justify-between gap-4">
         <Link
           href="/"
           className="flex min-w-0 shrink items-center"
@@ -153,7 +153,7 @@ export default function SiteHeader() {
             width={300}
             height={88}
             priority
-            className="h-10 w-auto max-w-[190px] sm:h-11 sm:max-w-none"
+            className="h-[58px] w-auto max-w-[230px] object-contain sm:h-[64px] sm:max-w-[260px]"
           />
         </Link>
 
